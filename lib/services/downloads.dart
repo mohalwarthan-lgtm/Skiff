@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'db.dart';
+import 'net.dart';
 
 /// Offline downloads for travel: saves the video file plus every addon
 /// subtitle (.srt/.vtt) next to it, tracked in the Downloads tab.
@@ -83,7 +84,8 @@ class Downloads {
       // Video: streamed to disk with progress.
       final videoPath = '${dir.path}/$base.mkv';
       final client = http.Client();
-      final req = http.Request('GET', Uri.parse(url))..headers.addAll(headers);
+      final req = http.Request('GET', Uri.parse(url))
+        ..headers.addAll(Net.withUa(headers));
       final res = await client.send(req);
       if (res.statusCode >= 400) throw 'HTTP ${res.statusCode}';
       final total = res.contentLength ?? -1;

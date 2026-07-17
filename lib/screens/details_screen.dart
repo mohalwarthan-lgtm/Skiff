@@ -3,6 +3,7 @@ import '../config.dart';
 import '../services/addons.dart';
 import '../services/db.dart';
 import '../services/downloads.dart';
+import '../services/net.dart';
 import '../services/torbox.dart';
 import '../services/trakt.dart';
 import 'player_screen.dart';
@@ -302,16 +303,27 @@ class _StreamSheetState extends State<_StreamSheet> {
   }
 
   Future<String> _resolveUrl(Map s) async {
-    if (s['url'] != null) return s['url'];
-    if (s['infoHash'] != null) {
+    String raw;
+    if (s['url'] != null) {
+      raw = s['url'];
+    } else if (s['infoHash'] != null) {
       setState(() => busy = 'Asking TorBox to fetch this torrent…');
       try {
-        return await TorBox.resolve(s['infoHash'], s['fileIdx']);
+        raw = await TorBox.resolve(s['infoHash'], s['fileIdx']);
       } finally {
         if (mounted) setState(() => busy = null);
       }
+    } else {
+      throw 'This stream has no playable source.';
     }
-    throw 'This stream has no playable source.';
+    // Addon /resolve endpoints answer with redirects or a text body holding
+    // the real CDN link — walk that chain so the player gets a direct URL.
+    if (mounted) setState(() => busy = 'Resolving stream…');
+    try {
+      return await Net.finalUrl(raw, _headers(s));
+    } finally {
+      if (mounted) setState(() => busy = null);
+    }
   }
 
   Map<String, String> _headers(Map s) {

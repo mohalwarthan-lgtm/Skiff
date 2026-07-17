@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../services/db.dart';
+import '../services/net.dart';
 import '../services/trakt.dart';
 
 /// Full-screen player. media_kit bundles its own engine (mpv under the hood),
@@ -66,10 +67,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _open() async {
     setState(() => playerError = null);
     try {
+      final isLocal = !widget.url.startsWith('http');
       await player.open(
           Media(widget.url,
-              httpHeaders:
-                  widget.headers.isEmpty ? null : widget.headers),
+              httpHeaders: isLocal ? null : Net.withUa(widget.headers)),
           play: true);
     } catch (e) {
       if (mounted) setState(() => playerError = '$e');
