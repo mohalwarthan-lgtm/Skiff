@@ -354,15 +354,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _applySavedSubStyle() {
-    final scale = Db.setting('sub_scale');
-    final pos = Db.setting('sub_pos');
-    if (scale != null) _setMpv('sub-scale', scale);
-    if (pos != null) _setMpv('sub-pos', pos);
+    // Render subtitles as outlined text (like Stremio/mpv defaults) rather
+    // than text on an opaque box. 'back-color' alpha controls the box; we
+    // default it fully transparent and expose it as a slider.
+    _setMpv('sub-border-size', Db.setting('sub_border') ?? '3.0');
+    _setMpv('sub-border-color', '#000000');
+    _setMpv('sub-shadow-offset', '0.0');
+    _setMpv('sub-color', '#FFFFFF');
+    _setMpv('sub-back-color', _backColor(Db.setting('sub_bg_opacity') ?? '0'));
+    _setMpv('sub-scale', Db.setting('sub_scale') ?? '1.0');
+    _setMpv('sub-pos', Db.setting('sub_pos') ?? '100');
+  }
+
+  /// mpv wants ARGB hex; map a 0-100 opacity to the alpha byte.
+  String _backColor(String pct) {
+    final a = ((double.tryParse(pct) ?? 0) / 100 * 255).round().clamp(0, 255);
+    final hex = a.toRadixString(16).padLeft(2, '0').toUpperCase();
+    return '#${hex}000000';
   }
 
   Future<void> _subStyleDialog() async {
     var scale = double.tryParse(Db.setting('sub_scale') ?? '') ?? 1.0;
     var pos = double.tryParse(Db.setting('sub_pos') ?? '') ?? 100.0;
+    var border = double.tryParse(Db.setting('sub_border') ?? '') ?? 3.0;
+    var bg = double.tryParse(Db.setting('sub_bg_opacity') ?? '') ?? 0.0;
     var delay = 0.0;
     await showDialog(
       context: context,
@@ -400,6 +415,40 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     setD(() => pos = v);
                     _setMpv('sub-pos', v.round().toString());
                     Db.setSetting('sub_pos', v.round().toString());
+                  },
+                ),
+              ),
+            ]),
+            Row(children: [
+              const SizedBox(width: 70, child: Text('Border')),
+              Expanded(
+                child: Slider(
+                  value: border,
+                  min: 0,
+                  max: 6,
+                  divisions: 12,
+                  label: border.toStringAsFixed(1),
+                  onChanged: (v) {
+                    setD(() => border = v);
+                    _setMpv('sub-border-size', v.toStringAsFixed(1));
+                    Db.setSetting('sub_border', v.toStringAsFixed(1));
+                  },
+                ),
+              ),
+            ]),
+            Row(children: [
+              const SizedBox(width: 70, child: Text('Box')),
+              Expanded(
+                child: Slider(
+                  value: bg,
+                  min: 0,
+                  max: 100,
+                  divisions: 20,
+                  label: '${bg.round()}%',
+                  onChanged: (v) {
+                    setD(() => bg = v);
+                    _setMpv('sub-back-color', _backColor(v.round().toString()));
+                    Db.setSetting('sub_bg_opacity', v.round().toString());
                   },
                 ),
               ),

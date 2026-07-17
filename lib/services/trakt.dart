@@ -222,6 +222,72 @@ class Trakt {
     return {'data': jsonDecode(res.body)};
   }
 
+  /// Push the entire local library up to Trakt: 'plan' items to the
+  /// watchlist, watched episodes/movies to history. Runs before a pull so a
+  /// manual sync reflects local changes made offline. Batched to be polite.
+  static Future<String> pushLibrary() async {
+    if (!connected) return 'Not connected';
+    syncStatus.value = 'Pushing library…';
+    await ensureFresh();
+
+    final planShows = <Map>[];
+    final planMovies = <Map>[];
+    for (final it in Db.items.values.cast<Map>()) {
+      if (it['status'] == 'plan') {
+        final entry = {'ids': {'imdb': it['id']}};
+        (it['type'] == 'series' ? planShows : planMovies).add(entry);
+      }
+    }
+    if (planShows.isNotEmpty || planMovies.isNotEmpty) {
+      await _syncPost('watchlist', {
+        if (planShows.isNotEmpty) 'shows': planShows,
+        if (planMovies.isNotEmpty) 'movies': planMovies,
+      });
+    }
+
+    // Watched history: group episodes under their show, movies flat.
+    final movieHist = <Map>[];
+    final showMap = <String, Map<int, List<int>>>{};
+    for (final p in Db.progress.values.cast<Map>()) {
+      if (p['watched'] != true) continue;
+      final vid = p['videoId'] as String;
+      if (p['type'] == 'series') {
+        final parts = vid.split(':');
+        if (parts.length >= 3) {
+          final imdb = parts[0];
+          final season = int.tryParse(parts[1]) ?? 0;
+          final ep = int.tryParse(parts[2]) ?? 0;
+          showMap.putIfAbsent(imdb, () => {}).putIfAbsent(season, () => []).add(ep);
+        }
+      } else {
+        movieHist.add({'ids': {'imdb': vid.split(':').first}});
+      }
+    }
+    final showHist = [
+      for (final e in showMap.entries)
+        {
+          'ids': {'imdb': e.key},
+          'seasons': [
+            for (final s in e.value.entries)
+              {
+                'number': s.key,
+                'episodes': [for (final n in s.value) {'number': n}]
+              }
+          ]
+        }
+    ];
+    if (movieHist.isNotEmpty || showHist.isNotEmpty) {
+      await _syncPost('history', {
+        if (movieHist.isNotEmpty) 'movies': movieHist,
+        if (showHist.isNotEmpty) 'shows': showHist,
+      });
+    }
+
+    syncStatus.value = 'Library pushed at ' + _clock();
+    return 'Pushed ${planShows.length + planMovies.length} watchlist, '
+        '${movieHist.length} movies, ${showHist.length} shows.';
+  }
+
   static Future<String> pullAll() async {
     syncStatus.value = 'Syncing…';
     await ensureFresh();

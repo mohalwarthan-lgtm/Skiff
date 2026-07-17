@@ -90,8 +90,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
                   IconButton(
                     icon: const Icon(Icons.sync, size: 16),
-                    tooltip: 'Sync with Trakt now',
+                    tooltip: 'Sync with Trakt now (push your library, then pull)',
                     onPressed: () async {
+                      // Push the local library up first, then reconcile down.
+                      await Trakt.pushLibrary().catchError((_) {});
                       await Trakt.pullAll().catchError((e) {
                         Trakt.syncStatus.value = 'Sync failed';
                         return '';
