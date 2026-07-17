@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'screens/addons_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/discover_screen.dart';
 import 'screens/downloads_screen.dart';
 import 'screens/library_screen.dart';
@@ -67,6 +68,7 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     final screens = const [
+      HomeScreen(),
       LibraryScreen(),
       DiscoverScreen(),
       DownloadsScreen(),
@@ -89,6 +91,8 @@ class _ShellState extends State<Shell> {
                       letterSpacing: 3)),
             ),
             destinations: const [
+              NavigationRailDestination(
+                  icon: Icon(Icons.home_outlined), label: Text('Home')),
               NavigationRailDestination(
                   icon: Icon(Icons.video_library_outlined), label: Text('Library')),
               NavigationRailDestination(
