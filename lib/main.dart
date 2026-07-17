@@ -14,6 +14,8 @@ import 'services/trakt.dart';
 
 String? _fullMpvPath() {
   if (!Platform.isWindows) return null;
+  // Respect an explicit opt-out saved in settings.
+  if (Db.setting('use_full_engine') == 'false') return null;
   final exeDir = File(Platform.resolvedExecutable).parent.path;
   final dll = File(exeDir + r'\full_mpv\libmpv-2.dll');
   return dll.existsSync() ? dll.path : null;
@@ -25,8 +27,8 @@ Future<void> main() async {
   // Prefer the full mpv engine shipped by the cloud build (complete codec
   // support: TrueHD, DTS variants, everything). If the folder is missing,
   // media_kit silently uses its own bundled engine instead.
-  MediaKit.ensureInitialized(libmpv: _fullMpvPath());
   await Db.init();
+  MediaKit.ensureInitialized(libmpv: _fullMpvPath());
   runApp(const SkiffApp());
 
   // Hands-off Trakt: pull on launch, then every 30 minutes.

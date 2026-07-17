@@ -174,7 +174,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text(error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
         const SizedBox(height: 20),
-        const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        const Text('PLAYBACK', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Use full codec engine'),
+                subtitle: Text(
+                    'On: play every codec including TrueHD/DTS. If video ever '
+                    'crashes on launch, turn this off to use the safe built-in '
+                    'engine. Restart Skiff after changing.',
+                    style: hint),
+                value: (Db.setting('use_full_engine') ?? 'true') != 'false',
+                onChanged: (v) => setState(() =>
+                    Db.setSetting('use_full_engine', v ? 'true' : 'false')),
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 20),
+                const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
