@@ -1,34 +1,35 @@
 name: Build Skiff
-
 on:
   push:
   workflow_dispatch:
-
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-
       - name: Ensure Windows platform files
         run: flutter create --platforms=windows --project-name skiff .
-
       - name: Dependencies
         run: flutter pub get
-
       - name: Build (release)
         run: >
           flutter build windows --release
           --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }}
           --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
-
+      - name: Bundle full mpv engine (complete codec support incl. TrueHD)
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest
+          $asset = $rel.assets | Where-Object { $_.name -match '^mpv-dev-x86_64-\d' -and $_.name -notmatch 'v3' } | Select-Object -First 1
+          Invoke-WebRequest $asset.browser_download_url -OutFile mpv-dev.7z
+          7z x mpv-dev.7z -ompv-dev | Out-Null
+          New-Item -ItemType Directory -Force build/windows/x64/runner/Release/full_mpv | Out-Null
+          Copy-Item mpv-dev/libmpv-2.dll build/windows/x64/runner/Release/full_mpv/
       - name: Package
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath skiff-windows.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: skiff-windows
