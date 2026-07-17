@@ -3,6 +3,7 @@ import '../services/addons.dart';
 import '../services/db.dart';
 import 'catalog_screen.dart';
 import 'details_screen.dart';
+import 'search_screen.dart';
 import 'widgets.dart';
 
 /// Home: continue-watching first, then one horizontal row per catalog from
@@ -93,6 +94,21 @@ class _HomeScreenState extends State<HomeScreen> {
               const Text('Home',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
               const Spacer(),
+              SizedBox(
+                width: 240,
+                child: TextField(
+                  decoration: const InputDecoration(
+                      hintText: 'Search all add-ons',
+                      prefixIcon: Icon(Icons.search, size: 18),
+                      isDense: true),
+                  onSubmitted: (q) {
+                    if (q.trim().isEmpty) return;
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => SearchScreen(query: q.trim())));
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
               if (_hidden.isNotEmpty)
                 TextButton(
                     onPressed: _unhideAll,

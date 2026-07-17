@@ -155,6 +155,37 @@ class Addons {
     return out;
   }
 
+  /// One search across every search-capable catalog of every enabled addon,
+  /// merged and deduplicated by type+id.
+  static Future<List<Map>> searchAll(String query) async {
+    final futures = <Future<List>>[];
+    for (final a in enabled()) {
+      final m = a['manifest'] as Map;
+      for (final c in (m['catalogs'] as List? ?? [])) {
+        final hasSearch = ((c['extra'] as List?) ?? [])
+            .any((e) => e is Map && e['name'] == 'search');
+        if (hasSearch) {
+          futures.add(fetchCatalog(
+                  a['transportUrl'], c['type'], c['id'], {'search': query})
+              .catchError((_) => <dynamic>[]));
+        }
+      }
+    }
+    final results = await Future.wait(futures);
+    final seen = <String>{};
+    final merged = <Map>[];
+    for (final page in results) {
+      for (final item in page) {
+        if (item is Map && item['id'] != null) {
+          if (seen.add('${item['type']}|${item['id']}')) {
+            merged.add(item.cast<String, dynamic>());
+          }
+        }
+      }
+    }
+    return merged;
+  }
+
   static Future<List<Map>> subtitlesFor(String type, String id) async {
     final out = <Map>[];
     for (final a in enabled()) {

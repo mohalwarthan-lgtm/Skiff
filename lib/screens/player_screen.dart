@@ -38,7 +38,10 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   late final Player player;
   VideoController? controller;
-  String? playerError;
+  String? playerError; // fatal: blocks playback, full panel
+  String? audioWarn; // audio-only trouble: video keeps playing, small banner
+  bool triedAutoAudio = false;
+  bool retriedOpen = false;
   final List<String> logs = [];
   Timer? saveTimer;
   bool resumed = false;
@@ -54,14 +57,58 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // The video surface MUST exist before open(), or the stream decodes
     // into the void and the screen stays black.
     controller = VideoController(player);
-    player.stream.error.listen((e) {
-      if (mounted) setState(() => playerError = e);
-    });
+    player.stream.error.listen(_onEngineError);
     player.stream.log.listen((l) {
       logs.add('${l.prefix}: ${l.text}');
       if (logs.length > 10) logs.removeAt(0);
     });
     _open();
+  }
+
+  /// Classify engine errors: an audio decoder failing (TrueHD & friends)
+  /// must not block a playing video — warn, and auto-try another track.
+  /// Transient failures get one silent retry before the full error panel.
+  void _onEngineError(String e) async {
+    if (!mounted) return;
+    final low = e.toLowerCase();
+    final audioIssue = low.contains('decoder') || low.contains('audio');
+    if (audioIssue) {
+      setState(() => audioWarn = e);
+      if (!triedAutoAudio) {
+        triedAutoAudio = true;
+        await Future.delayed(const Duration(seconds: 1));
+        final tracks = player.state.tracks.audio
+            .where((t) => t.id != 'auto' && t.id != 'no')
+            .toList();
+        final current = player.state.track.audio.id;
+        final other = tracks.where((t) => t.id != current).toList();
+        if (other.isNotEmpty) {
+          await player.setAudioTrack(other.first);
+          if (mounted) {
+            setState(() =>
+                audioWarn = "This release's main audio codec is unsupported — "
+                    "switched to another audio track automatically.");
+          }
+        } else if (mounted) {
+          setState(() => audioWarn =
+              "This release's audio codec is unsupported and it has no "
+              "other audio track — pick a different release.");
+        }
+      }
+      // If nothing is actually playing after a while, escalate.
+      await Future.delayed(const Duration(seconds: 4));
+      if (mounted && player.state.position.inSeconds == 0) {
+        setState(() => playerError = e);
+      }
+      return;
+    }
+    if (!retriedOpen) {
+      retriedOpen = true;
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) _open();
+      return;
+    }
+    setState(() => playerError = e);
   }
 
   Future<void> _open() async {
@@ -252,6 +299,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: const Text('Close')),
                   ]),
                 ]),
+              ),
+            ),
+          if (audioWarn != null && playerError == null)
+            Positioned(
+              top: 64,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.volume_off, size: 16),
+                    const SizedBox(width: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Text(audioWarn!,
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                    TextButton(
+                        onPressed: _pickAudio,
+                        child: const Text('Audio tracks')),
+                    IconButton(
+                        icon: const Icon(Icons.close, size: 14),
+                        onPressed: () => setState(() => audioWarn = null)),
+                  ]),
+                ),
               ),
             ),
           // Click video = pause/play

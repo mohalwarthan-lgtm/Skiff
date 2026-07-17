@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/profile.dart';
 import '../config.dart';
 import '../services/db.dart';
 import '../services/trakt.dart';
@@ -173,6 +175,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (error != null)
           Text(error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        const SizedBox(height: 20),
+        const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                  'Move Skiff between devices: export writes one file (and '
+                  'copies it to your clipboard) with your add-ons, library, '
+                  'progress, and settings. Import it on any other platform '
+                  'running Skiff.',
+                  style: hint),
+              const SizedBox(height: 8),
+              Row(children: [
+                FilledButton.tonal(
+                  onPressed: () async {
+                    try {
+                      final path = await Profile.exportToFile();
+                      await Clipboard.setData(
+                          ClipboardData(text: Profile.exportJson()));
+                      setState(() =>
+                          note = 'Profile saved to $path (and copied to clipboard).');
+                    } catch (e) {
+                      setState(() => error = '$e');
+                    }
+                  },
+                  child: const Text('Export profile'),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.tonal(
+                  onPressed: () async {
+                    final ctrl = TextEditingController();
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Import profile'),
+                        content: TextField(
+                          controller: ctrl,
+                          maxLines: 6,
+                          decoration: const InputDecoration(
+                              hintText:
+                                  'Paste profile JSON here, or a path to the file'),
+                        ),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel')),
+                          FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Import')),
+                        ],
+                      ),
+                    );
+                    if (ok == true) {
+                      try {
+                        final msg = await Profile.import(ctrl.text);
+                        setState(() => note = msg);
+                      } catch (e) {
+                        setState(() => error = '$e');
+                      }
+                    }
+                  },
+                  child: const Text('Import profile'),
+                ),
+              ]),
+              if (note != null)
+                Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(note!, style: hint)),
+            ]),
+          ),
+        ),
         const SizedBox(height: 20),
         const Text('TORBOX', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/addons.dart';
 import 'details_screen.dart';
+import 'search_screen.dart';
 import 'widgets.dart';
 
 /// Discover, two levels deep:
@@ -25,6 +26,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   String? option; // selected value for a required extra (genre/language/...)
   List items = [];
   bool loading = false;
+  bool loadingMore = false;
+  bool endReached = false;
   String? error;
 
   static const _labels = {
@@ -93,28 +96,58 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return null;
   }
 
+  Map<String, String> _extraFor() {
+    final extra = <String, String>{};
+    final req = _requiredExtra;
+    if (req != null) {
+      final opts = (req['options'] as List?)?.cast<String>() ?? [];
+      option ??= opts.isNotEmpty ? opts.first : null;
+      if (option != null) extra['${req['name']}'] = option!;
+    }
+    return extra;
+  }
+
   Future<void> _load() async {
     final c = _current;
     if (c == null) return;
     setState(() {
       loading = true;
+      endReached = false;
       error = null;
     });
     try {
-      final extra = <String, String>{};
-      final req = _requiredExtra;
-      if (req != null) {
-        final opts = (req['options'] as List?)?.cast<String>() ?? [];
-        option ??= opts.isNotEmpty ? opts.first : null;
-        if (option != null) extra['${req['name']}'] = option!;
-      }
-      if (search.isNotEmpty && c['hasSearch'] == true) extra['search'] = search;
-      items = await Addons.fetchCatalog(c['transportUrl'], c['type'], c['id'], extra);
+      items = await Addons.fetchCatalog(
+          c['transportUrl'], c['type'], c['id'], _extraFor());
+      if (items.isEmpty) endReached = true;
     } catch (e) {
       error = '$e';
       items = [];
     }
     if (mounted) setState(() => loading = false);
+  }
+
+  /// Next page via the protocol's `skip` extra. Dedupes so catalogs that
+  /// ignore `skip` naturally stop instead of repeating forever.
+  Future<void> _loadMore() async {
+    final c = _current;
+    if (c == null || loading || loadingMore || endReached) return;
+    setState(() => loadingMore = true);
+    try {
+      final page = await Addons.fetchCatalog(c['transportUrl'], c['type'],
+          c['id'], {..._extraFor(), 'skip': '${items.length}'});
+      final seen = {for (final m in items) '${m['type']}|${m['id']}'};
+      final fresh = page
+          .where((m) => m is Map && seen.add('${m['type']}|${m['id']}'))
+          .toList();
+      if (fresh.isEmpty) {
+        endReached = true;
+      } else {
+        items = [...items, ...fresh];
+      }
+    } catch (_) {
+      endReached = true;
+    }
+    if (mounted) setState(() => loadingMore = false);
   }
 
   @override
@@ -153,6 +186,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               ),
           ]),
           const Spacer(),
+          SizedBox(
+            width: 240,
+            child: TextField(
+              decoration: const InputDecoration(
+                  hintText: 'Search all add-ons',
+                  prefixIcon: Icon(Icons.search, size: 18),
+                  isDense: true),
+              onSubmitted: (q) {
+                if (q.trim().isEmpty) return;
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SearchScreen(query: q.trim())));
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
           if (loading)
             const SizedBox(
                 width: 18, height: 18,
@@ -196,20 +244,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               },
             ),
           ],
-          if (_current?['hasSearch'] == true) ...[
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 220,
-              child: TextField(
-                decoration:
-                    const InputDecoration(hintText: 'Search', isDense: true),
-                onSubmitted: (v) {
-                  search = v;
-                  _load();
-                },
-              ),
-            ),
-          ],
         ]),
       ),
       if (error != null)
@@ -218,16 +252,32 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             child: Text(error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error))),
       Expanded(
-        child: PosterGrid(children: [
-          for (final m in items)
-            PosterCard(
-              poster: m['poster'],
-              title: m['name'] ?? m['id'],
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => DetailsScreen(type: m['type'], id: m['id']))),
-            ),
-        ]),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
+              _loadMore();
+            }
+            return false;
+          },
+          child: PosterGrid(children: [
+            for (final m in items)
+              PosterCard(
+                poster: m['poster'],
+                title: m['name'] ?? m['id'],
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) =>
+                        DetailsScreen(type: m['type'], id: m['id']))),
+              ),
+          ]),
+        ),
       ),
+      if (loadingMore)
+        const Padding(
+            padding: EdgeInsets.all(8),
+            child: Center(
+                child: SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2)))),
     ]);
   }
 }

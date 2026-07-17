@@ -23,6 +23,9 @@ class CatalogScreen extends StatefulWidget {
 class _CatalogScreenState extends State<CatalogScreen> {
   List items = [];
   bool loading = true;
+  bool loadingMore = false;
+  bool endReached = false;
+  String search = '';
   String? error;
 
   @override
@@ -31,18 +34,45 @@ class _CatalogScreenState extends State<CatalogScreen> {
     _load('');
   }
 
-  Future<void> _load(String search) async {
+  Future<void> _load(String q) async {
+    search = q;
     setState(() {
       loading = true;
+      endReached = false;
       error = null;
     });
     try {
       items = await Addons.fetchCatalog(widget.transportUrl, widget.type,
-          widget.id, search.isEmpty ? {} : {'search': search});
+          widget.id, q.isEmpty ? {} : {'search': q});
+      if (items.isEmpty) endReached = true;
     } catch (e) {
       error = '$e';
     }
     if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> _loadMore() async {
+    if (loading || loadingMore || endReached) return;
+    setState(() => loadingMore = true);
+    try {
+      final extra = <String, String>{
+        if (search.isNotEmpty) 'search': search,
+        'skip': '${items.length}',
+      };
+      final page = await Addons.fetchCatalog(
+          widget.transportUrl, widget.type, widget.id, extra);
+      final seen = {for (final m in items) '${m['id']}'};
+      final fresh =
+          page.where((m) => m is Map && seen.add('${m['id']}')).toList();
+      if (fresh.isEmpty) {
+        endReached = true;
+      } else {
+        items = [...items, ...fresh];
+      }
+    } catch (_) {
+      endReached = true;
+    }
+    if (mounted) setState(() => loadingMore = false);
   }
 
   @override
@@ -69,16 +99,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ? const Center(child: CircularProgressIndicator())
           : error != null
               ? Center(child: Text(error!))
-              : PosterGrid(children: [
-                  for (final m in items)
-                    PosterCard(
-                      poster: m['poster'],
-                      title: m['name'] ?? m['id'],
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) =>
-                              DetailsScreen(type: m['type'], id: m['id']))),
-                    ),
-                ]),
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
+                      _loadMore();
+                    }
+                    return false;
+                  },
+                  child: PosterGrid(children: [
+                    for (final m in items)
+                      PosterCard(
+                        poster: m['poster'],
+                        title: m['name'] ?? m['id'],
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => DetailsScreen(
+                                    type: m['type'], id: m['id']))),
+                      ),
+                  ]),
+                ),
     );
   }
 }
