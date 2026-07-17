@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config.dart';
 import '../services/db.dart';
+import '../services/trakt.dart';
 import 'details_screen.dart';
 import 'widgets.dart';
 
@@ -17,6 +18,43 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => DetailsScreen(type: type, id: id)));
     setState(() {});
+  }
+
+  /// Right-click / long-press menu: move shelf, remove — mirrored to Trakt.
+  void _editItem(Map it) {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+              title: Text(it['name'] ?? it['id'],
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
+          for (final s in statuses)
+            ListTile(
+              leading: Icon(it['status'] == s.$1
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_off),
+              title: Text(s.$2),
+              onTap: () {
+                Db.setStatus(it['type'], it['id'], s.$1);
+                Trakt.pushStatus(it['type'], it['id'], s.$1);
+                Navigator.pop(context);
+                setState(() {});
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('Remove from library'),
+            onTap: () {
+              Db.removeItem(it['type'], it['id']);
+              Trakt.pushStatus(it['type'], it['id'], 'removed');
+              Navigator.pop(context);
+              setState(() {});
+            },
+          ),
+        ]),
+      ),
+    );
   }
 
   @override
@@ -53,15 +91,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     : null;
                 return SizedBox(
                   width: 140,
-                  child: PosterCard(
-                    poster: c['poster'],
-                    title: c['name'] ?? c['itemId'],
-                    subtitle: sub,
-                    progress: (c['duration'] ?? 0) > 0
-                        ? (c['position'] as num) / (c['duration'] as num)
-                        : null,
-                    onTap: () => _open(c['type'], c['itemId']),
-                  ),
+                  child: Stack(children: [
+                    PosterCard(
+                      poster: c['poster'],
+                      title: c['name'] ?? c['itemId'],
+                      subtitle: sub,
+                      progress: (c['duration'] ?? 0) > 0
+                          ? (c['position'] as num) / (c['duration'] as num)
+                          : null,
+                      onTap: () => _open(c['type'], c['itemId']),
+                    ),
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, size: 15),
+                        tooltip: 'Remove from Continue Watching',
+                        style: IconButton.styleFrom(
+                            backgroundColor: Colors.black54),
+                        onPressed: () {
+                          Db.dismissContinue(
+                              c['type'], c['itemId'], c['videoId']);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  ]),
                 );
               },
             ),
@@ -95,11 +150,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
         else
           PosterGrid(shrinkWrap: true, children: [
             for (final it in items)
-              PosterCard(
-                poster: it['poster'],
-                title: it['name'] ?? it['id'],
-                subtitle: statusLabel(it['status']),
-                onTap: () => _open(it['type'], it['id']),
+              GestureDetector(
+                onLongPress: () => _editItem(it),
+                onSecondaryTap: () => _editItem(it),
+                child: PosterCard(
+                  poster: it['poster'],
+                  title: it['name'] ?? it['id'],
+                  subtitle: statusLabel(it['status']),
+                  onTap: () => _open(it['type'], it['id']),
+                ),
               ),
           ]),
       ],

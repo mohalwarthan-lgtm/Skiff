@@ -22,20 +22,49 @@ class _HomeScreenState extends State<HomeScreen> {
     _build();
   }
 
+  /// A catalog belongs on the Home board only when it can be fetched with
+  /// no parameters. Catalogs that REQUIRE an extra (genre, language, year,
+  /// studio...) are Discover material — this mirrors how the addon itself
+  /// marks "show in home" in its manifest, so nothing is hardcoded.
+  static bool _isBoardCatalog(Map c) {
+    final extras = (c['extra'] as List?) ?? [];
+    final requiresParam = extras.any((e) =>
+        e is Map && e['isRequired'] == true && e['name'] != 'search');
+    // Legacy manifests express the same via extraRequired: [...].
+    final legacyRequired = ((c['extraRequired'] as List?) ?? [])
+        .any((n) => n != 'search');
+    return !requiresParam && !legacyRequired;
+  }
+
+  Set<String> get _hidden =>
+      (Db.setting('home_hidden') ?? '').split(',').where((s) => s.isNotEmpty).toSet();
+
+  void _hide(String key) {
+    Db.setSetting('home_hidden', ({..._hidden, key}).join(','));
+    setState(() {});
+  }
+
+  void _unhideAll() {
+    Db.setSetting('home_hidden', '');
+    _build();
+  }
+
   void _build() {
     rows = [
       for (final a in Addons.enabled())
         for (final c in ((a['manifest'] as Map)['catalogs'] as List? ?? []))
-          {
-            'transportUrl': a['transportUrl'],
-            'addonName': (a['manifest'] as Map)['name'],
-            'type': c['type'],
-            'id': c['id'],
-            'name': c['name'] ?? c['id'],
-            'hasSearch': ((c['extra'] as List?) ?? [])
-                .any((e) => e is Map && e['name'] == 'search'),
-          }
-    ].take(12).toList();
+          if (_isBoardCatalog(c))
+            {
+              'transportUrl': a['transportUrl'],
+              'addonName': (a['manifest'] as Map)['name'],
+              'type': c['type'],
+              'id': c['id'],
+              'name': c['name'] ?? c['id'],
+              'key': '${a['transportUrl']}|${c['type']}|${c['id']}',
+              'hasSearch': ((c['extra'] as List?) ?? [])
+                  .any((e) => e is Map && e['name'] == 'search'),
+            }
+    ].where((r) => !_hidden.contains(r['key'])).take(16).toList();
     // Kick off all fetches once; rows render as they arrive.
     for (final r in rows) {
       r['future'] = Addons.fetchCatalog(r['transportUrl'], r['type'], r['id'])
@@ -64,6 +93,10 @@ class _HomeScreenState extends State<HomeScreen> {
               const Text('Home',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
               const Spacer(),
+              if (_hidden.isNotEmpty)
+                TextButton(
+                    onPressed: _unhideAll,
+                    child: Text('Show hidden (${_hidden.length})')),
               IconButton(
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh catalogs',
@@ -117,6 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 return _Row(
                   title: '${r['name']}',
                   subtitle: '${r['addonName']} · ${r['type']}',
+                  onHide: () => _hide(r['key']),
                   onSeeAll: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => CatalogScreen(
                           transportUrl: r['transportUrl'],
@@ -148,9 +182,14 @@ class _Row extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback? onSeeAll;
+  final VoidCallback? onHide;
   final List<Widget> children;
   const _Row(
-      {required this.title, required this.children, this.subtitle, this.onSeeAll});
+      {required this.title,
+      required this.children,
+      this.subtitle,
+      this.onSeeAll,
+      this.onHide});
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +208,11 @@ class _Row extends StatelessWidget {
           const Spacer(),
           if (onSeeAll != null)
             TextButton(onPressed: onSeeAll, child: const Text('See all')),
+          if (onHide != null)
+            IconButton(
+                icon: const Icon(Icons.visibility_off_outlined, size: 16),
+                tooltip: 'Hide this row',
+                onPressed: onHide),
         ]),
       ),
       SizedBox(

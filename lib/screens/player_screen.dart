@@ -35,8 +35,10 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  late final Player player = Player();
-  late final VideoController controller = VideoController(player);
+  late final Player player;
+  VideoController? controller;
+  String? playerError;
+  final List<String> logs = [];
   Timer? saveTimer;
   bool resumed = false;
   bool controlsVisible = true;
@@ -46,11 +48,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    player = Player(
+        configuration: const PlayerConfiguration(logLevel: MPVLogLevel.warn));
+    // The video surface MUST exist before open(), or the stream decodes
+    // into the void and the screen stays black.
+    controller = VideoController(player);
+    player.stream.error.listen((e) {
+      if (mounted) setState(() => playerError = e);
+    });
+    player.stream.log.listen((l) {
+      logs.add('${l.prefix}: ${l.text}');
+      if (logs.length > 10) logs.removeAt(0);
+    });
     _open();
   }
 
   Future<void> _open() async {
-    await player.open(Media(widget.url, httpHeaders: widget.headers));
+    setState(() => playerError = null);
+    try {
+      await player.open(
+          Media(widget.url,
+              httpHeaders:
+                  widget.headers.isEmpty ? null : widget.headers),
+          play: true);
+    } catch (e) {
+      if (mounted) setState(() => playerError = '$e');
+      return;
+    }
     Trakt.scrobble('start', widget.type, widget.videoId, 0).catchError((_) {});
 
     // Resume once we know the duration.
@@ -189,7 +213,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
         onHover: (_) => _poke(),
         child: Stack(children: [
           Center(
-              child: Video(controller: controller, controls: NoVideoControls)),
+              child: controller == null
+                  ? const CircularProgressIndicator()
+                  : Video(controller: controller!, controls: NoVideoControls)),
+          // Buffering spinner while the network catches up.
+          Center(
+            child: StreamBuilder<bool>(
+              stream: player.stream.buffering,
+              builder: (_, s) => (s.data ?? false)
+                  ? const CircularProgressIndicator()
+                  : const SizedBox.shrink(),
+            ),
+          ),
+          if (playerError != null)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.all(40),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(10)),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.error_outline, size: 32),
+                  const SizedBox(height: 8),
+                  Text('Playback failed: $playerError',
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 6),
+                  SelectableText(logs.join('\n'),
+                      style: const TextStyle(
+                          fontSize: 10, fontFamily: 'monospace')),
+                  const SizedBox(height: 10),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    FilledButton(onPressed: _open, child: const Text('Retry')),
+                    const SizedBox(width: 10),
+                    TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close')),
+                  ]),
+                ]),
+              ),
+            ),
           // Click video = pause/play
           Positioned.fill(
             child: GestureDetector(

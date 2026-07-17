@@ -19,19 +19,37 @@ class _DetailsScreenState extends State<DetailsScreen> {
   Map<String, dynamic>? meta;
   String? error;
   int? season;
+  bool offline = false;
 
   @override
   void initState() {
     super.initState();
     Addons.metaFor(widget.type, widget.id).then((m) {
       if (!mounted) return;
+      // Cache the essentials so the library works with no internet.
+      Db.cacheMeta(widget.type, widget.id, m);
+      Db.touchItem(widget.type, widget.id,
+          name: m['name'], poster: m['poster']);
       setState(() {
         meta = m;
         final seasons = _seasons(m);
         season = seasons.firstWhere((s) => s > 0, orElse: () => seasons.isEmpty ? 1 : seasons.first);
       });
     }).catchError((e) {
-      if (mounted) setState(() => error = '$e');
+      if (!mounted) return;
+      // Offline (or addon down): fall back to the cached copy.
+      final cached = Db.cachedMeta(widget.type, widget.id);
+      if (cached != null) {
+        setState(() {
+          meta = cached.cast<String, dynamic>();
+          offline = true;
+          final seasons = _seasons(meta!);
+          season = seasons.firstWhere((s) => s > 0,
+              orElse: () => seasons.isEmpty ? 1 : seasons.first);
+        });
+      } else {
+        setState(() => error = '$e');
+      }
     });
   }
 
@@ -51,6 +69,15 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   Future<void> _openStreams(String videoId, String videoTitle) async {
+    // Make sure the item carries display info before any progress rows are
+    // written, so Continue Watching never shows a bare tt-id.
+    if (Db.itemStatus(widget.type, widget.id) == null) {
+      Db.setStatus(widget.type, widget.id, 'watching',
+          name: meta?['name'], poster: meta?['poster']);
+    } else {
+      Db.touchItem(widget.type, widget.id,
+          name: meta?['name'], poster: meta?['poster']);
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -96,6 +123,19 @@ class _DetailsScreenState extends State<DetailsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [
+          if (offline)
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Row(children: [
+                Icon(Icons.cloud_off, size: 16),
+                SizedBox(width: 8),
+                Text('Offline — showing saved details. Downloads still play.'),
+              ]),
+            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

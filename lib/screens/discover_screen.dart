@@ -4,8 +4,12 @@ import 'details_screen.dart';
 import 'widgets.dart';
 
 /// Discover, two levels deep:
-///   1) Content type tabs — Movies / Series / Anime / anything else addons declare
-///   2) Catalog chips within that type — Popular, Top rated, etc.
+///   1) Type family tabs (Movies / Series / Anime / ...) — dotted subtypes
+///      like "anime.movie" are grouped under their family, as the manifest
+///      intends, while the original type string is kept for API calls.
+///   2) Catalog chips within the family (Popular, By Language, MAL Genres...).
+/// Catalogs that REQUIRE a parameter (genre/language/year/studio) get a
+/// dropdown built from the options the manifest declares.
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
   @override
@@ -14,25 +18,27 @@ class DiscoverScreen extends StatefulWidget {
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
   List<Map> catalogs = [];
-  List<String> types = [];
-  String? selectedType;
+  List<String> families = [];
+  String? family;
   int catalogIdx = 0;
   String search = '';
+  String? option; // selected value for a required extra (genre/language/...)
   List items = [];
   bool loading = false;
   String? error;
 
-  static const _typeLabels = {
+  static const _labels = {
     'movie': 'Movies',
     'series': 'Series',
     'anime': 'Anime',
     'tv': 'TV',
     'channel': 'Channels',
   };
-  static const _typeOrder = ['movie', 'series', 'anime'];
+  static const _order = ['movie', 'series', 'anime'];
 
-  String _label(String t) =>
-      _typeLabels[t] ?? (t.isEmpty ? t : t[0].toUpperCase() + t.substring(1));
+  String _familyOf(String type) => type.split('.').first.toLowerCase();
+  String _label(String f) =>
+      _labels[f] ?? (f.isEmpty ? f : f[0].toUpperCase() + f.substring(1));
 
   @override
   void initState() {
@@ -47,38 +53,61 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           {
             'transportUrl': a['transportUrl'],
             'addonName': (a['manifest'] as Map)['name'],
-            'type': c['type'],
+            'type': c['type'], // original, used in request URLs
+            'family': _familyOf(c['type'] as String), // used for grouping only
             'id': c['id'],
             'name': c['name'] ?? c['id'],
+            'extra': c['extra'],
             'hasSearch': ((c['extra'] as List?) ?? [])
                 .any((e) => e is Map && e['name'] == 'search'),
           }
     ];
-    // Movies, Series, Anime first; any other addon-declared types after.
-    final found = catalogs.map((c) => c['type'] as String).toSet();
-    types = [
-      for (final t in _typeOrder)
-        if (found.contains(t)) t,
-      ...found.where((t) => !_typeOrder.contains(t)),
+    final found = catalogs.map((c) => c['family'] as String).toSet();
+    families = [
+      for (final f in _order)
+        if (found.contains(f)) f,
+      ...found.where((f) => !_order.contains(f)),
     ];
-    selectedType = types.isEmpty ? null : types.first;
+    family = families.isEmpty ? null : families.first;
     catalogIdx = 0;
-    if (selectedType != null) _load();
+    option = null;
+    if (family != null) _load();
   }
 
-  List<Map> get _typeCatalogs =>
-      catalogs.where((c) => c['type'] == selectedType).toList();
+  List<Map> get _familyCatalogs =>
+      catalogs.where((c) => c['family'] == family).toList();
+
+  Map? get _current {
+    final list = _familyCatalogs;
+    if (list.isEmpty) return null;
+    return list[catalogIdx.clamp(0, list.length - 1)];
+  }
+
+  /// The first required non-search extra of the current catalog, if any.
+  Map? get _requiredExtra {
+    for (final e in ((_current?['extra'] as List?) ?? [])) {
+      if (e is Map && e['isRequired'] == true && e['name'] != 'search') {
+        return e;
+      }
+    }
+    return null;
+  }
 
   Future<void> _load() async {
-    final list = _typeCatalogs;
-    if (list.isEmpty) return;
-    final c = list[catalogIdx.clamp(0, list.length - 1)];
+    final c = _current;
+    if (c == null) return;
     setState(() {
       loading = true;
       error = null;
     });
     try {
       final extra = <String, String>{};
+      final req = _requiredExtra;
+      if (req != null) {
+        final opts = (req['options'] as List?)?.cast<String>() ?? [];
+        option ??= opts.isNotEmpty ? opts.first : null;
+        if (option != null) extra['${req['name']}'] = option!;
+      }
       if (search.isNotEmpty && c['hasSearch'] == true) extra['search'] = search;
       items = await Addons.fetchCatalog(c['transportUrl'], c['type'], c['id'], extra);
     } catch (e) {
@@ -96,8 +125,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               'Add-ons tab and its catalogs will appear here.',
               textAlign: TextAlign.center));
     }
-    final list = _typeCatalogs;
-    final current = list.isEmpty ? null : list[catalogIdx.clamp(0, list.length - 1)];
+    final list = _familyCatalogs;
+    final req = _requiredExtra;
+    final reqOptions = (req?['options'] as List?)?.cast<String>() ?? [];
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
@@ -106,17 +136,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           const Text('Discover',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
           const SizedBox(width: 24),
-          // Level 1: content type
           Wrap(spacing: 8, children: [
-            for (final t in types)
+            for (final f in families)
               ChoiceChip(
-                label: Text(_label(t)),
-                selected: selectedType == t,
+                label: Text(_label(f)),
+                selected: family == f,
                 onSelected: (_) {
                   setState(() {
-                    selectedType = t;
+                    family = f;
                     catalogIdx = 0;
                     search = '';
+                    option = null;
                   });
                   _load();
                 },
@@ -129,7 +159,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2)),
         ]),
       ),
-      // Level 2: catalogs within the type (Popular, Top rated, ...)
       Padding(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
         child: Row(children: [
@@ -139,26 +168,41 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               child: Wrap(spacing: 8, children: [
                 for (var i = 0; i < list.length; i++)
                   ChoiceChip(
-                    label: Text(list.length > 1 &&
-                            list.where((c) => c['name'] == list[i]['name']).length > 1
-                        ? '${list[i]['name']} · ${list[i]['addonName']}'
-                        : list[i]['name']),
+                    label: Text(list[i]['name']),
                     selected: catalogIdx == i,
                     onSelected: (_) {
-                      setState(() => catalogIdx = i);
+                      setState(() {
+                        catalogIdx = i;
+                        option = null;
+                        search = '';
+                      });
                       _load();
                     },
                   ),
               ]),
             ),
           ),
-          if (current?['hasSearch'] == true) ...[
+          if (reqOptions.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            DropdownButton<String>(
+              value: option ?? reqOptions.first,
+              items: [
+                for (final o in reqOptions)
+                  DropdownMenuItem(value: o, child: Text(o)),
+              ],
+              onChanged: (v) {
+                setState(() => option = v);
+                _load();
+              },
+            ),
+          ],
+          if (_current?['hasSearch'] == true) ...[
             const SizedBox(width: 12),
             SizedBox(
-              width: 240,
+              width: 220,
               child: TextField(
-                decoration: const InputDecoration(
-                    hintText: 'Search', isDense: true),
+                decoration:
+                    const InputDecoration(hintText: 'Search', isDense: true),
                 onSubmitted: (v) {
                   search = v;
                   _load();

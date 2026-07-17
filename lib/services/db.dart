@@ -8,6 +8,7 @@ class Db {
   static late Box progress; // "type|itemId|videoId" -> {position,duration,watched,updatedAt}
   static late Box settings; // key -> value
   static late Box downloads; // "type|itemId|videoId" -> {path,subPaths,name,poster,videoTitle,size,status}
+  static late Box meta; // "type|id" -> trimmed meta cached for offline use
 
   static Future<void> init() async {
     await Hive.initFlutter('skiff');
@@ -16,6 +17,50 @@ class Db {
     progress = await Hive.openBox('progress');
     settings = await Hive.openBox('settings');
     downloads = await Hive.openBox('downloads');
+    meta = await Hive.openBox('meta');
+  }
+
+  // ---------- Offline metadata cache ----------
+
+  /// Cache the essentials of a title so Library / Continue Watching / Details
+  /// render correctly with no internet.
+  static void cacheMeta(String type, String id, Map m) {
+    meta.put(itemKey(type, id), {
+      'id': id,
+      'type': type,
+      'name': m['name'],
+      'poster': m['poster'],
+      'background': m['background'],
+      'description': m['description'],
+      'year': m['year'],
+      'runtime': m['runtime'],
+      'imdbRating': m['imdbRating'],
+      'genres': m['genres'],
+      'videos': [
+        for (final v in (m['videos'] as List? ?? []))
+          {
+            'id': v['id'],
+            'title': v['title'],
+            'name': v['name'],
+            'season': v['season'],
+            'episode': v['episode'],
+          }
+      ],
+    });
+  }
+
+  static Map? cachedMeta(String type, String id) =>
+      meta.get(itemKey(type, id)) as Map?;
+
+  /// Upsert display info without touching the shelf status.
+  static void touchItem(String type, String id, {String? name, String? poster}) {
+    final existing = item(type, id);
+    if (existing == null) return; // don't create shelf entries implicitly
+    items.put(itemKey(type, id), {
+      ...existing,
+      'name': name ?? existing['name'],
+      'poster': poster ?? existing['poster'],
+    });
   }
 
   static int now() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -43,14 +88,37 @@ class Db {
     });
   }
 
-  static void removeItem(String type, String id) =>
-      items.delete(itemKey(type, id));
+  /// Remove from the library AND clear its progress rows, so it also
+  /// disappears from Continue Watching instead of getting stuck there.
+  static void removeItem(String type, String id) {
+    items.delete(itemKey(type, id));
+    final stale = progress.keys
+        .where((k) => (k as String).startsWith('$type|$id|'))
+        .toList();
+    for (final k in stale) {
+      progress.delete(k);
+    }
+  }
+
+  /// Dismiss a single entry from Continue Watching.
+  static void dismissContinue(String type, String itemId, String videoId) =>
+      progress.delete(progKey(type, itemId, videoId));
 
   static List<Map> itemsByStatus(String? status) {
     final all = items.values.cast<Map>().toList()
       ..sort((a, b) => (b['updatedAt'] ?? 0).compareTo(a['updatedAt'] ?? 0));
-    if (status == null) return all;
-    return all.where((m) => m['status'] == status).toList();
+    final filtered =
+        status == null ? all : all.where((m) => m['status'] == status).toList();
+    // Fill gaps from the offline meta cache so names/posters always show.
+    return filtered.map((m) {
+      if (m['name'] != null && m['poster'] != null) return m;
+      final mc = cachedMeta(m['type'], m['id']);
+      return {
+        ...m,
+        'name': m['name'] ?? mc?['name'],
+        'poster': m['poster'] ?? mc?['poster'],
+      };
+    }).toList();
   }
 
   // ---------- Progress ----------
@@ -105,7 +173,12 @@ class Db {
       ..sort((a, b) => (b['updatedAt'] ?? 0).compareTo(a['updatedAt'] ?? 0));
     return rows.take(limit).map((p) {
       final it = item(p['type'], p['itemId']);
-      return {...p, 'name': it?['name'], 'poster': it?['poster']};
+      final mc = cachedMeta(p['type'], p['itemId']);
+      return {
+        ...p,
+        'name': it?['name'] ?? mc?['name'],
+        'poster': it?['poster'] ?? mc?['poster'],
+      };
     }).toList();
   }
 
