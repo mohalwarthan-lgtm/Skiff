@@ -420,25 +420,6 @@ class _StreamSheetState extends State<_StreamSheet> {
                         style: const TextStyle(
                             fontFamily: 'monospace', fontSize: 12)),
                     trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (('' + (s['description'] ?? '') + (s['title'] ?? ''))
-                          .toLowerCase()
-                          .contains('truehd'))
-                        const Tooltip(
-                          message:
-                              'TrueHD audio may not decode on all devices - '
-                              'Skiff will fall back to another audio track '
-                              'if the file has one.',
-                          child: Padding(
-                              padding: EdgeInsets.only(right: 6),
-                              child: Text('TrueHD ⚠',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: Color(0xFFE8B15C)))),
-                        ),
-                      if (s['infoHash'] != null && s['url'] == null)
-                        const Padding(
-                            padding: EdgeInsets.only(right: 6),
-                            child: Text('P2P', style: TextStyle(fontSize: 10))),
                       IconButton(
                           icon: const Icon(Icons.download_outlined, size: 20),
                           tooltip: 'Download for offline',

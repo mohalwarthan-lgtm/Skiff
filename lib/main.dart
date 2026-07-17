@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
@@ -10,10 +12,20 @@ import 'screens/settings_screen.dart';
 import 'services/db.dart';
 import 'services/trakt.dart';
 
+String? _fullMpvPath() {
+  if (!Platform.isWindows) return null;
+  final exeDir = File(Platform.resolvedExecutable).parent.path;
+  final dll = File(exeDir + r'\full_mpv\libmpv-2.dll');
+  return dll.existsSync() ? dll.path : null;
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized(); // window control (fullscreen etc.)
-  MediaKit.ensureInitialized(); // bundled video engine — nothing to install
+  // Prefer the full mpv engine shipped by the cloud build (complete codec
+  // support: TrueHD, DTS variants, everything). If the folder is missing,
+  // media_kit silently uses its own bundled engine instead.
+  MediaKit.ensureInitialized(libmpv: _fullMpvPath());
   await Db.init();
   runApp(const SkiffApp());
 
