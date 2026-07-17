@@ -1,71 +1,28 @@
 # Cloud build: every push compiles a Windows app on GitHub's clean machines.
 # Download the finished app from the workflow run's Artifacts section.
 name: Build Skiff
-
 on:
   push:
   workflow_dispatch:
-
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-
-      # Adds the windows/ platform scaffolding (kept out of the repo on purpose).
       - name: Ensure Windows platform files
         run: flutter create --platforms=windows --project-name skiff .
-
       - name: Dependencies
         run: flutter pub get
-
       - name: Build (release)
         run: >
           flutter build windows --release
           --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }}
           --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
-
-      - name: Bundle full mpv engine (media_kit's own build - ABI-matched)
-        shell: pwsh
-        run: |
-          # Use the SAME libmpv media_kit itself is built against (its
-          # encoders-gpl build). Because it's the exact source of media_kit's
-          # bundled engine, the ABI matches - no silent crash - while adding
-          # the full FFmpeg codec set (TrueHD, DTS, etc.).
-          $repo = 'media-kit/libmpv-win32-video-encoders-gpl-build'
-          $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
-          Write-Host "Release: $($rel.tag_name)"
-          $asset = $rel.assets |
-            Where-Object { $_.name -match '\.(7z|zip|tar\.gz|tar\.bz2)$' } |
-            Sort-Object { $_.name -match 'x86_64|win64|amd64' } -Descending |
-            Select-Object -First 1
-          if (-not $asset) { $rel.assets | ForEach-Object { Write-Host $_.name }; Write-Error 'No libmpv archive asset found'; exit 1 }
-          Write-Host "Downloading $($asset.name)"
-          Invoke-WebRequest $asset.browser_download_url -OutFile mpvlib.archive
-          New-Item -ItemType Directory -Force mpvlib | Out-Null
-          # 7-Zip on the runner handles 7z/zip; tarballs need two passes.
-          if ($asset.name -match '\.tar\.(gz|bz2)$') {
-            7z x mpvlib.archive -ompvlib_tmp | Out-Null
-            $tar = Get-ChildItem -Recurse mpvlib_tmp -Filter *.tar | Select-Object -First 1
-            7z x $tar.FullName -ompvlib | Out-Null
-          } else {
-            7z x mpvlib.archive -ompvlib | Out-Null
-          }
-          $dll = Get-ChildItem -Recurse mpvlib -Include libmpv-2.dll,mpv-2.dll,libmpv.dll |
-            Select-Object -First 1
-          if (-not $dll) { Get-ChildItem -Recurse mpvlib | ForEach-Object { Write-Host $_.FullName }; Write-Error 'libmpv DLL not found in archive'; exit 1 }
-          Write-Host "Found $($dll.FullName)"
-          New-Item -ItemType Directory -Force build/windows/x64/runner/Release/full_mpv | Out-Null
-          # media_kit loads it by the name 'libmpv-2.dll'.
-          Copy-Item $dll.FullName build/windows/x64/runner/Release/full_mpv/libmpv-2.dll
-
       - name: Package
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath skiff-windows.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: skiff-windows
