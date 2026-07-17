@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config.dart';
 import 'db.dart';
@@ -8,6 +9,16 @@ import 'db.dart';
 /// Trakt -> local: watched history + watchlist pulled on start and periodically.
 class Trakt {
   static const _api = 'https://api.trakt.tv';
+
+  /// Live sync status for the UI ("Syncing...", "Synced 19:42", ...).
+  static final syncStatus = ValueNotifier<String>('');
+
+  static String _clock() {
+    final n = DateTime.now();
+    final h = n.hour.toString().padLeft(2, '0');
+    final m = n.minute.toString().padLeft(2, '0');
+    return '${h}:${m}';
+  }
 
   static (String, String)? client() {
     if (Config.hasBundledTrakt) {
@@ -141,10 +152,15 @@ class Trakt {
     try {
       await ensureFresh();
       final c = client()!;
-      await http.post(Uri.parse('$_api/sync/$path'),
+      final res = await http.post(Uri.parse('$_api/sync/$path'),
           headers: _headers(c.$1, Db.setting('trakt_access')),
           body: jsonEncode(body));
-    } catch (_) {/* best-effort */}
+      syncStatus.value = res.statusCode < 300
+          ? 'Change pushed at ' + _clock()
+          : 'Push failed (HTTP ' + res.statusCode.toString() + ')';
+    } catch (e) {
+      syncStatus.value = 'Push failed - will retry on next sync';
+    }
   }
 
   static Map _watchlistBody(String type, String id) => {
@@ -207,6 +223,7 @@ class Trakt {
   }
 
   static Future<String> pullAll() async {
+    syncStatus.value = 'Syncing…';
     await ensureFresh();
     final movies = (await _get('/sync/watched/movies'))['data'] as List;
     final shows = (await _get('/sync/watched/shows'))['data'] as List;
@@ -246,6 +263,7 @@ class Trakt {
         nW++;
       }
     }
+    syncStatus.value = 'Synced at ' + _clock();
     return 'Synced $nM movies, $nS shows, $nW watchlist items.';
   }
 }

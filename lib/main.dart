@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:window_manager/window_manager.dart';
 import 'screens/addons_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/discover_screen.dart';
@@ -11,6 +12,7 @@ import 'services/trakt.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await windowManager.ensureInitialized(); // window control (fullscreen etc.)
   MediaKit.ensureInitialized(); // bundled video engine — nothing to install
   await Db.init();
   runApp(const SkiffApp());

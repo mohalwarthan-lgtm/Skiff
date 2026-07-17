@@ -18,6 +18,7 @@ class DiscoverScreen extends StatefulWidget {
 }
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
+  final scroll = ScrollController();
   List<Map> catalogs = [];
   List<String> families = [];
   String? family;
@@ -124,7 +125,22 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       items = [];
     }
     if (mounted) setState(() => loading = false);
+    _fillViewport();
   }
+  /// Large windows can swallow whole pages without ever scrolling, which
+  /// starves scroll-based paging - so keep fetching until the grid actually
+  /// overflows (or the catalog ends).
+  void _fillViewport() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || endReached || loading || loadingMore) return;
+      if (!scroll.hasClients) return;
+      if (scroll.position.maxScrollExtent <= 0 && items.isNotEmpty) {
+        await _loadMore();
+        _fillViewport();
+      }
+    });
+  }
+
 
   /// Next page via the protocol's `skip` extra. Dedupes so catalogs that
   /// ignore `skip` naturally stop instead of repeating forever.
@@ -148,6 +164,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       endReached = true;
     }
     if (mounted) setState(() => loadingMore = false);
+    _fillViewport();
   }
 
   @override
@@ -259,7 +276,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             }
             return false;
           },
-          child: PosterGrid(children: [
+          child: PosterGrid(controller: scroll, children: [
             for (final m in items)
               PosterCard(
                 poster: m['poster'],

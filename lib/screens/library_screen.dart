@@ -65,10 +65,47 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 18),
-          child: Text('Library',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(children: [
+            const Text('Library',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            // Live Trakt sync status, so you can close the app knowing
+            // whether your shelves made it to Trakt.
+            ValueListenableBuilder<String>(
+              valueListenable: Trakt.syncStatus,
+              builder: (_, status, __) => Row(children: [
+                if (Trakt.connected) ...[
+                  Icon(
+                      status.startsWith('Push failed')
+                          ? Icons.sync_problem
+                          : status == 'Syncing…'
+                              ? Icons.sync
+                              : Icons.cloud_done_outlined,
+                      size: 15),
+                  const SizedBox(width: 6),
+                  Text(status.isEmpty ? 'Trakt connected' : status,
+                      style:
+                          TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+                  IconButton(
+                    icon: const Icon(Icons.sync, size: 16),
+                    tooltip: 'Sync with Trakt now',
+                    onPressed: () async {
+                      await Trakt.pullAll().catchError((e) {
+                        Trakt.syncStatus.value = 'Sync failed';
+                        return '';
+                      });
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ] else
+                  Text('Trakt not connected',
+                      style: TextStyle(
+                          fontSize: 12, color: Theme.of(context).hintColor)),
+              ]),
+            ),
+          ]),
         ),
         if (cont.isNotEmpty && tab == null) ...[
           const Padding(

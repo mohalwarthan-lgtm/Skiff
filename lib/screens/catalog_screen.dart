@@ -21,6 +21,7 @@ class CatalogScreen extends StatefulWidget {
 }
 
 class _CatalogScreenState extends State<CatalogScreen> {
+  final scroll = ScrollController();
   List items = [];
   bool loading = true;
   bool loadingMore = false;
@@ -49,7 +50,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
       error = '$e';
     }
     if (mounted) setState(() => loading = false);
+    _fillViewport();
   }
+  /// Large windows can swallow whole pages without ever scrolling, which
+  /// starves scroll-based paging - so keep fetching until the grid actually
+  /// overflows (or the catalog ends).
+  void _fillViewport() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || endReached || loading || loadingMore) return;
+      if (!scroll.hasClients) return;
+      if (scroll.position.maxScrollExtent <= 0 && items.isNotEmpty) {
+        await _loadMore();
+        _fillViewport();
+      }
+    });
+  }
+
 
   Future<void> _loadMore() async {
     if (loading || loadingMore || endReached) return;
@@ -73,6 +89,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       endReached = true;
     }
     if (mounted) setState(() => loadingMore = false);
+    _fillViewport();
   }
 
   @override
@@ -106,7 +123,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     }
                     return false;
                   },
-                  child: PosterGrid(children: [
+                  child: PosterGrid(controller: scroll, children: [
                     for (final m in items)
                       PosterCard(
                         poster: m['poster'],

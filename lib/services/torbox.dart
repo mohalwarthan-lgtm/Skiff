@@ -26,8 +26,9 @@ class TorBox {
   static Future<String> resolve(String infoHash, int? fileIdx,
       {Duration timeout = const Duration(minutes: 3)}) async {
     if (apiKey == null) {
-      throw 'This stream is torrent-only. Add your TorBox API key in Settings '
-          'and Skiff will fetch it through TorBox — no torrent client needed.';
+      throw 'This stream is torrent-only with no resolver available. '
+          'Pick one of the AIOStreams entries instead - your debrid services '
+          'are configured there and those streams play directly.';
     }
 
     // 1) Ask TorBox to add the torrent (idempotent if it already exists).

@@ -19,8 +19,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? note, error;
   final idCtrl = TextEditingController();
   final secretCtrl = TextEditingController();
-  final torboxCtrl =
-      TextEditingController(text: Db.setting('torbox_api_key') ?? '');
 
   @override
   void dispose() {
@@ -248,26 +246,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        const Text('TORBOX', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              TextField(
-                controller: torboxCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                    labelText: 'TorBox API key',
-                    helperText:
-                        'Used only for torrent-only (P2P) streams: TorBox fetches '
-                        'them server-side and Skiff streams the result — no '
-                        'torrent client involved. Debrid/usenet streams don\'t '
-                        'need this.'),
-                onChanged: (v) => Db.setSetting('torbox_api_key', v.trim()),
-              ),
-            ]),
-          ),
-        ),
       ],
     );
   }

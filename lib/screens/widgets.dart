@@ -65,10 +65,16 @@ class PosterCard extends StatelessWidget {
 class PosterGrid extends StatelessWidget {
   final List<Widget> children;
   final bool shrinkWrap;
-  const PosterGrid({super.key, required this.children, this.shrinkWrap = false});
+  final ScrollController? controller;
+  const PosterGrid(
+      {super.key,
+      required this.children,
+      this.shrinkWrap = false,
+      this.controller});
 
   @override
   Widget build(BuildContext context) => GridView.count(
+        controller: controller,
         crossAxisCount: (MediaQuery.of(context).size.width / 170).floor().clamp(2, 10),
         childAspectRatio: 0.58,
         mainAxisSpacing: 14,
