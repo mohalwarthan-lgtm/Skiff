@@ -8,6 +8,14 @@ import 'widgets.dart';
 
 /// Home: continue-watching first, then one horizontal row per catalog from
 /// your metadata add-ons (AIOMetadata etc.) — a browsable front page.
+String? _epLabel(String vid) {
+  final parts = vid.split(':');
+  if (parts.length < 3) return null;
+  return parts.first.startsWith('tt')
+      ? 'S${parts[1]} · E${parts[2]}'
+      : 'E${parts.last}';
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -119,9 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: PosterCard(
                       poster: c['poster'],
                       title: c['name'] ?? c['itemId'],
-                      subtitle: (c['videoId'] as String).contains(':')
-                          ? 'S${(c['videoId'] as String).split(':')[1]} · E${(c['videoId'] as String).split(':')[2]}'
-                          : null,
+                      subtitle: _epLabel(c['videoId'] as String),
                       progress: (c['duration'] ?? 0) > 0
                           ? (c['position'] as num) / (c['duration'] as num)
                           : null,

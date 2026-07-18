@@ -113,6 +113,97 @@ class Trakt {
 
   // ---------- Scrobbling ----------
 
+  /// Trakt's episode numbering can disagree with the metadata add-on's
+  /// (anime especially: TVDB-style 3 seasons vs Trakt's one long season,
+  /// like Re:Zero). We fetch Trakt's own episode table once per show
+  /// (cached a week) and translate by absolute position when the direct
+  /// (season, episode) doesn't exist on Trakt's side.
+  static Future<List?> _traktSeasons(String imdb) async {
+    final key = 'traktseasons|' + imdb;
+    final cached = Db.meta.get(key);
+    if (cached is Map) {
+      final at = (cached['at'] ?? 0) as num;
+      if (Db.now() - at < 7 * 24 * 3600) return cached['seasons'] as List?;
+    }
+    try {
+      final c = client()!;
+      final res = await http.get(
+          Uri.parse('$_api/shows/$imdb/seasons?extended=episodes'),
+          headers: _headers(c.$1));
+      if (res.statusCode >= 300) {
+        return cached is Map ? cached['seasons'] as List? : null;
+      }
+      final list = jsonDecode(res.body) as List;
+      final slim = [
+        for (final se in list)
+          if (((se['number'] ?? 0) as num) > 0)
+            {
+              'number': (se['number'] as num).toInt(),
+              'episodes': ([
+                for (final e in (se['episodes'] as List? ?? []))
+                  ((e['number'] ?? 0) as num).toInt()
+              ]..sort()),
+            }
+      ];
+      await Db.meta.put(key, {'at': Db.now(), 'seasons': slim});
+      return slim;
+    } catch (_) {
+      return cached is Map ? cached['seasons'] as List? : null;
+    }
+  }
+
+  static List<(int, int)> _flatEpisodes(List seasons) => [
+        for (final se in seasons)
+          for (final e in (se['episodes'] as List))
+            ((se['number'] as num).toInt(), (e as num).toInt())
+      ];
+
+  static bool _traktHas(List seasons, int se, int ep) => seasons.any((s0) =>
+      (s0['number'] as num).toInt() == se &&
+      (s0['episodes'] as List).contains(ep));
+
+  /// Ordered (season, episode, videoId) from the local metadata cache.
+  static List<(int, int, String)> _localEpisodes(String type, String itemId) {
+    final meta = Db.cachedMeta(type, itemId);
+    final rows = <(int, int, String)>[];
+    for (final v in (meta?['videos'] as List? ?? [])) {
+      if (v is Map) {
+        final se = (v['season'] as num?)?.toInt() ?? 0;
+        final ep = (v['episode'] as num?)?.toInt() ?? 0;
+        if (se > 0) rows.add((se, ep, '${v['id']}'));
+      }
+    }
+    rows.sort((a, b) => a.$1 != b.$1 ? a.$1 - b.$1 : a.$2 - b.$2);
+    return rows;
+  }
+
+  /// Local numbering -> Trakt numbering.
+  static Future<(int, int)> toTraktNumbering(
+      String imdb, String type, String itemId, int se, int ep) async {
+    final tr = await _traktSeasons(imdb);
+    if (tr == null || tr.isEmpty || _traktHas(tr, se, ep)) return (se, ep);
+    final locals = _localEpisodes(type, itemId);
+    final idx = locals.indexWhere((r) => r.$1 == se && r.$2 == ep);
+    if (idx < 0) return (se, ep);
+    final flat = _flatEpisodes(tr);
+    return idx < flat.length ? flat[idx] : (se, ep);
+  }
+
+  /// Trakt numbering -> local (season, episode, videoId).
+  static Future<(int, int, String)?> fromTraktNumbering(
+      String imdb, String type, String itemId, int se, int ep) async {
+    final locals = _localEpisodes(type, itemId);
+    for (final r in locals) {
+      if (r.$1 == se && r.$2 == ep) return r;
+    }
+    final tr = await _traktSeasons(imdb);
+    if (tr == null) return null;
+    final idx =
+        _flatEpisodes(tr).indexWhere((t) => t.$1 == se && t.$2 == ep);
+    if (idx >= 0 && idx < locals.length) return locals[idx];
+    return null;
+  }
+
   /// Resolve ANY Stremio video id to Trakt-usable identifiers.
   /// "tt0944947:3:9" parses directly; prefixed ids like "kitsu:7169:5"
   /// are translated through the cached metadata (imdb_id + the episode's
@@ -120,8 +211,8 @@ class Trakt {
   /// For progress pulled FROM Trakt: find the local item that maps to this
   /// imdb id (it may live under a kitsu-style id) so the position lands on
   /// the row the app actually uses. Falls back to imdb-keyed ids.
-  static (String, String) _localTarget(
-      String type, String imdb, int? season, int? episode) {
+  static Future<(String, String)> _localTarget(
+      String type, String imdb, int? season, int? episode) async {
     for (final it in Db.items.values.cast<Map>()) {
       if (it['type'] != type) continue;
       final itemId = it['id'] as String;
@@ -130,12 +221,11 @@ class Trakt {
       itImdb ??= (meta?['imdb_id'] ?? meta?['imdbId']) as String?;
       if (itImdb != imdb) continue;
       if (type == 'movie') return (itemId, itemId);
-      for (final v in (meta?['videos'] as List? ?? [])) {
-        if (v is Map &&
-            (v['season'] as num?)?.toInt() == season &&
-            (v['episode'] as num?)?.toInt() == episode) {
-          return (itemId, v['id'] as String);
-        }
+      if (season != null && episode != null) {
+        // Direct or numbering-translated match onto a real local episode.
+        final hit = await fromTraktNumbering(
+            imdb, type, itemId, season, episode);
+        if (hit != null) return (itemId, hit.$3);
       }
       return (itemId, '$itemId:$season:$episode');
     }
@@ -176,14 +266,15 @@ class Trakt {
   }
 
   /// Movies: videoId "tt0111161". Episodes: "tt0944947:3:9".
-  static Map<String, dynamic> _scrobbleBody(
-      String itemType, String itemId, String videoId, double progressPct) {
+  static Future<Map<String, dynamic>> _scrobbleBody(
+      String itemType, String itemId, String videoId, double progressPct) async {
     final r = resolveVideo(itemType, itemId, videoId);
     if (r == null) return const {};
     if (itemType == 'series' && r.$2 != null && r.$3 != null) {
+      final t = await toTraktNumbering(r.$1, itemType, itemId, r.$2!, r.$3!);
       return {
         'show': {'ids': {'imdb': r.$1}},
-        'episode': {'season': r.$2, 'number': r.$3},
+        'episode': {'season': t.$1, 'number': t.$2},
         'progress': progressPct,
       };
     }
@@ -197,12 +288,21 @@ class Trakt {
   static Future<void> scrobble(
       String action, String itemType, String itemId, String videoId, double pct) async {
     if (!connected) return;
-    final body = _scrobbleBody(itemType, itemId, videoId, pct);
-    if (body.isEmpty) return; // id has no imdb mapping (rare anime sources)
+    final body = await _scrobbleBody(itemType, itemId, videoId, pct);
+    if (body.isEmpty) {
+      syncStatus.value = 'Scrobble skipped — no Trakt mapping ($videoId)';
+      return;
+    }
     final c = client()!;
-    await http.post(Uri.parse('$_api/scrobble/$action'),
+    final res = await http.post(Uri.parse('$_api/scrobble/$action'),
         headers: _headers(c.$1, Db.setting('trakt_access')),
         body: jsonEncode(body));
+    if (res.statusCode >= 300) {
+      syncStatus.value =
+          'Scrobble $action failed (HTTP ${res.statusCode})';
+    } else if (action != 'start') {
+      syncStatus.value = 'Progress sent to Trakt ' + _clock();
+    }
   }
 
   // ---------- Push (local -> Trakt) ----------
@@ -229,19 +329,21 @@ class Trakt {
         ]
       };
 
-  static Map _historyBody(String type, String itemId, String videoId) {
+  static Future<Map> _historyBody(
+      String type, String itemId, String videoId) async {
     final r = resolveVideo(type, itemId, videoId);
     if (r == null) return const {};
     if (type == 'series' && r.$2 != null && r.$3 != null) {
+      final t = await toTraktNumbering(r.$1, type, itemId, r.$2!, r.$3!);
       return {
         'shows': [
           {
             'ids': {'imdb': r.$1},
             'seasons': [
               {
-                'number': r.$2,
+                'number': t.$1,
                 'episodes': [
-                  {'number': r.$3}
+                  {'number': t.$2}
                 ]
               }
             ]
@@ -380,9 +482,9 @@ class Trakt {
     return 'Removed $removed Trakt entries that are not in your library.';
   }
 
-  static void pushWatched(
-      String type, String itemId, String videoId, bool watched) {
-    final body = _historyBody(type, itemId, videoId);
+  static Future<void> pushWatched(
+      String type, String itemId, String videoId, bool watched) async {
+    final body = await _historyBody(type, itemId, videoId);
     if (body.isEmpty) return; // no imdb mapping
     _syncPost(watched ? 'history' : 'history/remove', body);
   }
@@ -426,14 +528,17 @@ class Trakt {
     for (final p in Db.progress.values.cast<Map>()) {
       if (p['watched'] != true) continue;
       final vid = p['videoId'] as String;
-      final r = resolveVideo(
-          p['type'] as String? ?? 'movie', p['itemId'] as String? ?? vid, vid);
+      final itemId = p['itemId'] as String? ?? vid;
+      final r =
+          resolveVideo(p['type'] as String? ?? 'movie', itemId, vid);
       if (r == null) continue; // no imdb mapping
       if (p['type'] == 'series' && r.$2 != null && r.$3 != null) {
+        final t = await toTraktNumbering(
+            r.$1, 'series', itemId, r.$2!, r.$3!);
         showMap
             .putIfAbsent(r.$1, () => {})
-            .putIfAbsent(r.$2!, () => [])
-            .add(r.$3!);
+            .putIfAbsent(t.$1, () => [])
+            .add(t.$2);
       } else if (p['type'] != 'series') {
         movieHist.add({'ids': {'imdb': r.$1}});
       }
@@ -505,6 +610,7 @@ class Trakt {
       }
     }
     // Carry over partial positions watched elsewhere (Trakt playback).
+    var nPos = 0;
     try {
       final c2 = client()!;
       final h2 = _headers(c2.$1, Db.setting('trakt_access'));
@@ -521,21 +627,24 @@ class Trakt {
           if (e['movie'] != null) {
             final imdb = e['movie']?['ids']?['imdb'];
             if (imdb == null) continue;
-            final t = _localTarget('movie', imdb, null, null);
+            final t = await _localTarget('movie', imdb, null, null);
             Db.mergePct('movie', t.$1, t.$2, pct, at: at);
+            nPos++;
           } else if (e['show'] != null && e['episode'] != null) {
             final imdb = e['show']?['ids']?['imdb'];
             if (imdb == null) continue;
             final se = (e['episode']?['season'] as num?)?.toInt();
             final ep = (e['episode']?['number'] as num?)?.toInt();
-            final t = _localTarget('series', imdb, se, ep);
+            final t = await _localTarget('series', imdb, se, ep);
             Db.mergePct('series', t.$1, t.$2, pct, at: at);
+            nPos++;
           }
         }
       }
     } catch (_) {/* progress carry-over is best effort */}
 
-    syncStatus.value = 'Synced at ' + _clock();
+    syncStatus.value = 'Synced at ' + _clock() +
+        (nPos > 0 ? ' · $nPos positions' : '');
     return 'Synced $nM movies, $nS shows, $nW watchlist items.';
   }
 }

@@ -30,6 +30,7 @@ class Db {
       'type': type,
       'name': m['name'],
       'poster': m['poster'],
+      'imdb_id': m['imdb_id'] ?? m['imdbId'],
       'background': m['background'],
       'description': m['description'],
       'year': m['year'],
@@ -44,6 +45,7 @@ class Db {
             'name': v['name'],
             'season': v['season'],
             'episode': v['episode'],
+            'released': v['released'],
           }
       ],
     });
