@@ -13,6 +13,9 @@ import 'services/trakt.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized(); // window control (fullscreen etc.)
+  windowManager.waitUntilReadyToShow().then((_) async {
+    await windowManager.setTitle('Skiff');
+  });
   // Prefer the full mpv engine shipped by the cloud build (complete codec
   // support: TrueHD, DTS variants, everything). If the folder is missing,
   // media_kit silently uses its own bundled engine instead.

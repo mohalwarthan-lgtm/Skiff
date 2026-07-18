@@ -453,7 +453,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             content: Column(mainAxisSize: MainAxisSize.min, children: [
               row('Size', subSize, 20, 80, 30, 'sub_size',
                   (v) => subSize = v),
-              row('Height', subBottom, 0, 220, 44, 'sub_bottom',
+              row('Position', subBottom, 0, 300, 60, 'sub_bottom',
                   (v) => subBottom = v),
               row('Outline', subOutline, 0, 5, 10, 'sub_outline',
                   (v) => subOutline = v,

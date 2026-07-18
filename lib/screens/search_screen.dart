@@ -35,7 +35,7 @@ class _SearchScreenState extends State<SearchScreen> {
           controller: ctrl,
           autofocus: false,
           decoration: const InputDecoration(
-              hintText: 'Search everything', border: InputBorder.none),
+              hintText: 'Search', border: InputBorder.none),
           onSubmitted: _run,
         ),
       ),

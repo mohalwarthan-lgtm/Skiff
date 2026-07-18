@@ -207,7 +207,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             width: 240,
             child: TextField(
               decoration: const InputDecoration(
-                  hintText: 'Search all add-ons',
+                  hintText: 'Search',
                   prefixIcon: Icon(Icons.search, size: 18),
                   isDense: true),
               onSubmitted: (q) {

@@ -37,19 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return !requiresParam && !legacyRequired;
   }
 
-  Set<String> get _hidden =>
-      (Db.setting('home_hidden') ?? '').split(',').where((s) => s.isNotEmpty).toSet();
-
-  void _hide(String key) {
-    Db.setSetting('home_hidden', ({..._hidden, key}).join(','));
-    setState(() {});
-  }
-
-  void _unhideAll() {
-    Db.setSetting('home_hidden', '');
-    _build();
-  }
-
   void _build() {
     rows = [
       for (final a in Addons.enabled())
@@ -61,11 +48,10 @@ class _HomeScreenState extends State<HomeScreen> {
               'type': c['type'],
               'id': c['id'],
               'name': c['name'] ?? c['id'],
-              'key': '${a['transportUrl']}|${c['type']}|${c['id']}',
               'hasSearch': ((c['extra'] as List?) ?? [])
                   .any((e) => e is Map && e['name'] == 'search'),
             }
-    ].where((r) => !_hidden.contains(r['key'])).take(16).toList();
+    ].take(16).toList();
     // Kick off all fetches once; rows render as they arrive.
     for (final r in rows) {
       r['future'] = Addons.fetchCatalog(r['transportUrl'], r['type'], r['id'])
@@ -98,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 240,
                 child: TextField(
                   decoration: const InputDecoration(
-                      hintText: 'Search all add-ons',
+                      hintText: 'Search',
                       prefixIcon: Icon(Icons.search, size: 18),
                       isDense: true),
                   onSubmitted: (q) {
@@ -109,10 +95,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              if (_hidden.isNotEmpty)
-                TextButton(
-                    onPressed: _unhideAll,
-                    child: Text('Show hidden (${_hidden.length})')),
               IconButton(
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh catalogs',
@@ -166,7 +148,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 return _Row(
                   title: '${r['name']}',
                   subtitle: '${r['addonName']} · ${r['type']}',
-                  onHide: () => _hide(r['key']),
                   onSeeAll: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => CatalogScreen(
                           transportUrl: r['transportUrl'],
@@ -198,14 +179,12 @@ class _Row extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback? onSeeAll;
-  final VoidCallback? onHide;
   final List<Widget> children;
   const _Row(
       {required this.title,
       required this.children,
       this.subtitle,
-      this.onSeeAll,
-      this.onHide});
+      this.onSeeAll});
 
   @override
   Widget build(BuildContext context) {
@@ -224,11 +203,6 @@ class _Row extends StatelessWidget {
           const Spacer(),
           if (onSeeAll != null)
             TextButton(onPressed: onSeeAll, child: const Text('See all')),
-          if (onHide != null)
-            IconButton(
-                icon: const Icon(Icons.visibility_off_outlined, size: 16),
-                tooltip: 'Hide this row',
-                onPressed: onHide),
         ]),
       ),
       SizedBox(
