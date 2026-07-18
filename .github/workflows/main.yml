@@ -1,34 +1,30 @@
 # Cloud build: every push compiles a Windows app on GitHub's clean machines.
 # Download the finished app from the workflow run's Artifacts section.
 name: Build Skiff
-
 on:
   push:
   workflow_dispatch:
-
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-
       # Adds the windows/ platform scaffolding (kept out of the repo on purpose).
       - name: Ensure Windows platform files
         run: flutter create --platforms=windows --project-name skiff .
-
+      - name: App icon
+        shell: pwsh
+        run: Copy-Item assets/app_icon.ico windows/runner/resources/app_icon.ico -Force
       - name: Dependencies
         run: flutter pub get
-
       - name: Build (release)
         run: >
           flutter build windows --release
           --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }}
           --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
-
       - name: Upgrade shared mpv engine (full codec set incl. TrueHD)
         shell: pwsh
         run: |
@@ -53,10 +49,8 @@ jobs:
           Copy-Item $dll.FullName "$out/libmpv-2.dll" -Force
           Set-Content "$out/RESTORE-SAFE-ENGINE.bat" 'copy /y "%~dp0libmpv-2.dll.original" "%~dp0libmpv-2.dll"'
           Write-Host 'Engine swapped; original kept as libmpv-2.dll.original'
-
       - name: Package
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath skiff-windows.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: skiff-windows
