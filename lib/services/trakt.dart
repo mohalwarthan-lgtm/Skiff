@@ -251,6 +251,130 @@ class Trakt {
     };
   }
 
+  /// Shelf changes: 'plan' lands on the Trakt watchlist; any other shelf
+  /// takes it off the watchlist.
+  static void pushStatus(String type, String id, String status) {
+    if (status == 'plan') {
+      _syncPost('watchlist', _watchlistBody(type, id));
+    } else {
+      _syncPost('watchlist/remove', _watchlistBody(type, id));
+    }
+  }
+
+  /// Removing a title locally removes it from Trakt too - watchlist,
+  /// watch history, AND paused playback progress (the "Continue Watching"
+  /// row on Trakt) - so nothing can resurrect it.
+  static void pushRemoval(String type, String id) {
+    _syncPost('watchlist/remove', _watchlistBody(type, id));
+    _syncPost('history/remove', _watchlistBody(type, id));
+    clearPlayback(id);
+  }
+
+  /// Delete every Trakt playback-progress entry for the given imdb id.
+  /// This is what feeds Trakt's "Continue Watching" row.
+  static Future<void> clearPlayback(String imdbId) async {
+    if (!connected) return;
+    try {
+      await ensureFresh();
+      final c = client()!;
+      final h = _headers(c.$1, Db.setting('trakt_access'));
+      final res = await http.get(Uri.parse('$_api/sync/playback'), headers: h);
+      if (res.statusCode >= 300) return;
+      final list = jsonDecode(res.body) as List;
+      for (final e in list) {
+        final media = (e['movie'] ?? e['show']) as Map?;
+        if (media?['ids']?['imdb'] == imdbId) {
+          await http.delete(Uri.parse('$_api/sync/playback/${e['id']}'),
+              headers: h);
+        }
+      }
+    } catch (_) {/* best effort */}
+  }
+
+  /// Make Trakt mirror this library exactly: any title on Trakt (watchlist,
+  /// watched history, or paused playback) that is NOT in the local library
+  /// gets removed from Trakt. Returns a summary.
+  static Future<String> mirrorLocal() async {
+    if (!connected) return 'Not connected';
+    syncStatus.value = 'Mirroring library to Trakt…';
+    await ensureFresh();
+    final c = client()!;
+    final h = _headers(c.$1, Db.setting('trakt_access'));
+    final keep = {
+      for (final it in Db.items.values.cast<Map>()) it['id'] as String
+    };
+    // Items may live under kitsu-style ids locally; keep their imdb ids too.
+    for (final it in Db.items.values.cast<Map>()) {
+      final meta = Db.cachedMeta(it['type'], it['id']);
+      final imdb = meta?['imdb_id'] ?? meta?['imdbId'];
+      if (imdb is String && imdb.startsWith('tt')) keep.add(imdb);
+    }
+    var removed = 0;
+
+    Future<List> getList(String path) async {
+      final res = await http.get(Uri.parse('$_api/$path'), headers: h);
+      if (res.statusCode >= 300) return const [];
+      final body = jsonDecode(res.body);
+      return body is List ? body : const [];
+    }
+
+    // 1) Paused playback entries ("Continue Watching" on Trakt).
+    for (final e in await getList('sync/playback')) {
+      final media = (e['movie'] ?? e['show']) as Map?;
+      final imdb = media?['ids']?['imdb'];
+      if (imdb != null && !keep.contains(imdb)) {
+        await http.delete(Uri.parse('$_api/sync/playback/${e['id']}'),
+            headers: h);
+        removed++;
+      }
+    }
+
+    // 2) Watched history: whole titles not in the library.
+    final movieIds = <Map>[];
+    for (final e in await getList('sync/watched/movies')) {
+      final imdb = e['movie']?['ids']?['imdb'];
+      if (imdb != null && !keep.contains(imdb)) {
+        movieIds.add({'ids': {'imdb': imdb}});
+      }
+    }
+    final showIds = <Map>[];
+    for (final e in await getList('sync/watched/shows')) {
+      final imdb = e['show']?['ids']?['imdb'];
+      if (imdb != null && !keep.contains(imdb)) {
+        showIds.add({'ids': {'imdb': imdb}});
+      }
+    }
+    if (movieIds.isNotEmpty || showIds.isNotEmpty) {
+      await _syncPost('history/remove', {
+        if (movieIds.isNotEmpty) 'movies': movieIds,
+        if (showIds.isNotEmpty) 'shows': showIds,
+      });
+      removed += movieIds.length + showIds.length;
+    }
+
+    // 3) Watchlist entries not in the library.
+    final wlMovies = <Map>[];
+    final wlShows = <Map>[];
+    for (final e in await getList('sync/watchlist')) {
+      final media = (e['movie'] ?? e['show']) as Map?;
+      final imdb = media?['ids']?['imdb'];
+      if (imdb != null && !keep.contains(imdb)) {
+        (e['movie'] != null ? wlMovies : wlShows)
+            .add({'ids': {'imdb': imdb}});
+      }
+    }
+    if (wlMovies.isNotEmpty || wlShows.isNotEmpty) {
+      await _syncPost('watchlist/remove', {
+        if (wlMovies.isNotEmpty) 'movies': wlMovies,
+        if (wlShows.isNotEmpty) 'shows': wlShows,
+      });
+      removed += wlMovies.length + wlShows.length;
+    }
+
+    syncStatus.value = 'Trakt mirrored at ' + _clock();
+    return 'Removed $removed Trakt entries that are not in your library.';
+  }
+
   static void pushWatched(String type, String videoId, bool watched) {
     final body = _historyBody(type, videoId);
     if (body.isEmpty) return; // no imdb mapping
