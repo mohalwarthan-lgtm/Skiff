@@ -185,7 +185,7 @@ class _ShellState extends State<Shell> with WindowListener {
                         letterSpacing: 2)),
               ]),
             ),
-            destinations: const [
+            destinations: [
               _dest(Symbols.home, 'Home'),
               _dest(Symbols.video_library, 'Library'),
               _dest(Symbols.explore, 'Discover'),
