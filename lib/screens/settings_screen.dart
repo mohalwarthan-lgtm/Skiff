@@ -101,6 +101,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                           child: const Text('Sync now')),
                       TextButton(
+                          onPressed: () async {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Make Trakt match this library?'),
+                                content: const Text(
+                                    'Every title on Trakt that is not in your '
+                                    'Skiff library will be removed from Trakt: '
+                                    'its watchlist entry, its watch history, '
+                                    'and its Continue Watching progress. Your '
+                                    'Skiff library becomes the single source '
+                                    'of truth. This cannot be undone.'),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('Cancel')),
+                                  FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text('Clean up Trakt')),
+                                ],
+                              ),
+                            );
+                            if (ok != true) return;
+                            setState(() => note = 'Cleaning up Trakt…');
+                            final msg = await Trakt.mirrorLocal()
+                                .catchError((e) => 'Cleanup failed: ' + '$e');
+                            setState(() => note = msg);
+                          },
+                          child: const Text('Clean up Trakt')),
+                      TextButton(
                           onPressed: () {
                             Trakt.disconnect();
                             setState(() {});

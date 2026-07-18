@@ -36,8 +36,15 @@ class Downloads {
     ..sort((a, b) => (b['createdAt'] ?? 0).compareTo(a['createdAt'] ?? 0));
 
   static Future<Directory> _dirFor(String itemId) async {
-    final root = await getApplicationSupportDirectory();
-    final dir = Directory('${root.path}/downloads/$itemId');
+    final custom = Db.setting('download_dir');
+    final Directory base;
+    if (custom != null && custom.trim().isNotEmpty) {
+      base = Directory(custom.trim());
+    } else {
+      final root = await getApplicationSupportDirectory();
+      base = Directory('${root.path}/downloads');
+    }
+    final dir = Directory('${base.path}/$itemId');
     await dir.create(recursive: true);
     return dir;
   }

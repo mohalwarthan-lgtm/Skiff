@@ -13,12 +13,7 @@ import 'services/trakt.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized(); // window control (fullscreen etc.)
-  windowManager.waitUntilReadyToShow().then((_) async {
-    await windowManager.setTitle('Skiff');
-  });
-  // Prefer the full mpv engine shipped by the cloud build (complete codec
-  // support: TrueHD, DTS variants, everything). If the folder is missing,
-  // media_kit silently uses its own bundled engine instead.
+  await windowManager.setTitle('Skiff');
   await Db.init();
   // One engine, loaded once, shared by the Dart side and the native texture
   // plugins alike. The cloud build replaces the DLL next to skiff.exe with a
@@ -75,8 +70,43 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
-class _ShellState extends State<Shell> {
+class _ShellState extends State<Shell> with WindowListener {
   int index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  /// Windows sometimes leaves the Flutter surface stale after maximize /
+  /// restore (the "frozen until I resize by hand" effect). Nudging the
+  /// engine to paint a couple of frames snaps it back instantly.
+  void _repaintKick() {
+    WidgetsBinding.instance.scheduleForcedFrame();
+    Future.delayed(const Duration(milliseconds: 60),
+        () => WidgetsBinding.instance.scheduleForcedFrame());
+    Future.delayed(const Duration(milliseconds: 250),
+        () => WidgetsBinding.instance.scheduleForcedFrame());
+  }
+
+  @override
+  void onWindowMaximize() => _repaintKick();
+
+  @override
+  void onWindowUnmaximize() => _repaintKick();
+
+  @override
+  void onWindowRestore() => _repaintKick();
+
+  @override
+  void onWindowFocus() => _repaintKick();
 
   @override
   Widget build(BuildContext context) {

@@ -151,6 +151,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         onPressed: () {
                           Db.dismissContinue(
                               c['type'], c['itemId'], c['videoId']);
+                          // Also clear it from Trakt's Continue Watching.
+                          Trakt.clearPlayback(c['itemId']);
                           setState(() {});
                         },
                       ),
