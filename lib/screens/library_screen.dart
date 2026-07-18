@@ -125,8 +125,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               itemBuilder: (_, i) {
                 final c = cont[i];
                 final vid = c['videoId'] as String;
-                final sub = vid.contains(':')
-                    ? 'S${vid.split(':')[1]} · E${vid.split(':')[2]}'
+                final parts = vid.split(':');
+                final sub = parts.length >= 3
+                    ? (parts.first.startsWith('tt')
+                        ? 'S${parts[1]} · E${parts[2]}'
+                        : 'E${parts.last}')
                     : null;
                 return SizedBox(
                   width: 140,

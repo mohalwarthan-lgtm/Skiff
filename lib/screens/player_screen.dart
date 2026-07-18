@@ -77,6 +77,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     player = Player(
         configuration: const PlayerConfiguration(logLevel: MPVLogLevel.warn));
     controller = VideoController(player); // surface BEFORE open, always
+    final cacheDir = Db.setting('cache_dir');
+    if (cacheDir != null && cacheDir.trim().isNotEmpty) {
+      _setMpv('cache-dir', cacheDir.trim());
+    }
     player.stream.error.listen(_onEngineError);
     player.stream.log.listen((l) {
       logs.add('${l.prefix}: ${l.text}');

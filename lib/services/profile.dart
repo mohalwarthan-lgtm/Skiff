@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'addons.dart';
 import 'db.dart';
 
 /// Portable profile: one JSON blob carrying add-ons, library, progress,
@@ -9,14 +10,17 @@ import 'db.dart';
 /// Skiff comes up identical. Downloads are excluded (paths are per-device).
 class Profile {
   static String exportJson() => jsonEncode({
-        'version': 1,
+        'version': 2,
         'app': 'skiff',
         'exportedAt': DateTime.now().toIso8601String(),
-        'addons': _stringKeys(Db.addons.toMap()),
+        // Just the install URLs - small, readable, and manifests are
+        // re-fetched fresh on import.
+        'addonUrls': [
+          for (final a in Db.addons.values.cast<Map>()) a['transportUrl']
+        ],
         'items': _stringKeys(Db.items.toMap()),
         'progress': _stringKeys(Db.progress.toMap()),
         'settings': _stringKeys(Db.settings.toMap()),
-        'meta': _stringKeys(Db.meta.toMap()),
       });
 
   static Map<String, dynamic> _stringKeys(Map m) =>
@@ -48,6 +52,18 @@ class Profile {
       throw 'This does not look like a SkiffBox profile.';
     }
     var n = 0;
+    var installed = 0;
+    // v2 profiles carry add-on URLs; re-install each (manifest re-fetched).
+    final urls = data['addonUrls'];
+    if (urls is List) {
+      for (final u in urls) {
+        if (u is! String || u.isEmpty) continue;
+        try {
+          await Addons.install(u);
+          installed++;
+        } catch (_) {/* dead addon URL - skip, keep importing the rest */}
+      }
+    }
     Future<void> apply(String key, dynamic box) async {
       final section = data[key];
       if (section is Map) {
@@ -58,11 +74,13 @@ class Profile {
       }
     }
 
-    await apply('addons', Db.addons);
+    await apply('addons', Db.addons); // legacy v1 profiles
     await apply('items', Db.items);
     await apply('progress', Db.progress);
     await apply('settings', Db.settings);
-    await apply('meta', Db.meta);
-    return 'Imported $n records. Add-ons, library, progress, and settings are in.';
+    await apply('meta', Db.meta); // legacy v1 profiles
+    return 'Imported $n records'
+        '${installed > 0 ? ' and $installed add-ons' : ''}. '
+        'Library, progress, and settings are in.';
   }
 }

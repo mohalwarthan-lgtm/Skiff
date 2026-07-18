@@ -17,9 +17,11 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? device;
   Timer? pollTimer;
-  String? note, error;
+  String? traktNote, storageNote, profileNote, error;
   late final dirCtrl =
       TextEditingController(text: Db.setting('download_dir') ?? '');
+  late final cacheCtrl =
+      TextEditingController(text: Db.setting('cache_dir') ?? '');
   final idCtrl = TextEditingController();
   final secretCtrl = TextEditingController();
 
@@ -58,10 +60,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             t.cancel();
             setState(() {
               device = null;
-              note = 'Connected — importing your Trakt history…';
+              traktNote = 'Connected — importing your Trakt history…';
             });
             final msg = await Trakt.pullAll().catchError((e) => '$e');
-            if (mounted) setState(() => note = msg);
+            if (mounted) setState(() => traktNote = msg);
           }
         } catch (e) {
           t.cancel();
@@ -97,10 +99,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Spacer(),
                       TextButton(
                           onPressed: () async {
-                            setState(() => note = 'Syncing…');
+                            setState(() => traktNote = 'Syncing…');
                             final msg =
                                 await Trakt.pullAll().catchError((e) => '$e');
-                            setState(() => note = msg);
+                            setState(() => traktNote = msg);
                           },
                           child: const Text('Sync now')),
                       TextButton(
@@ -129,10 +131,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             );
                             if (ok != true) return;
-                            setState(() => note = 'Cleaning up Trakt…');
+                            setState(() => traktNote = 'Cleaning up Trakt…');
                             final msg = await Trakt.mirrorLocal()
                                 .catchError((e) => 'Cleanup failed: ' + '$e');
-                            setState(() => note = msg);
+                            setState(() => traktNote = msg);
                           },
                           child: const Text('Clean up Trakt')),
                       TextButton(
@@ -142,7 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                           child: const Text('Disconnect')),
                     ]),
-                    if (note != null) Text(note!, style: hint),
+                    if (traktNote != null) Text(traktNote!, style: hint),
                     Text(
                         'Everything is automatic: playback scrobbles while you '
                         'watch, shelf changes and watched flags push to Trakt, '
@@ -209,11 +211,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text(error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
         const SizedBox(height: 20),
-        const Text('DOWNLOADS', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        const Text('STORAGE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Column(children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(
                 child: TextField(
                   controller: dirCtrl,
@@ -235,12 +238,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (dir != null && dir.isNotEmpty) {
                       dirCtrl.text = dir;
                       Db.setSetting('download_dir', dir);
-                      setState(() => note = 'New downloads will go to ' + dir);
+                      setState(() => storageNote = 'New downloads will go to ' + dir);
                     }
                   },
                   child: const Text('Browse…'),
                 ),
               ),
+            ]),
+            const SizedBox(height: 10),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(
+                child: TextField(
+                  controller: cacheCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Streaming cache folder',
+                      helperText:
+                          'Where the player buffers streams on disk. Empty = '
+                          'system default (C drive). Point it at another '
+                          'drive if C is tight. Applies to new playback.'),
+                  onChanged: (v) => Db.setSetting('cache_dir', v.trim()),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FilledButton.tonal(
+                  onPressed: () async {
+                    final dir = await getDirectoryPath();
+                    if (dir != null && dir.isNotEmpty) {
+                      cacheCtrl.text = dir;
+                      Db.setSetting('cache_dir', dir);
+                      setState(() =>
+                          storageNote = 'Streaming cache will use ' + dir);
+                    }
+                  },
+                  child: const Text('Browse…'),
+                ),
+              ),
+            ]),
+            if (storageNote != null)
+              Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(storageNote!, style: hint))),
             ]),
           ),
         ),
@@ -266,7 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       await Clipboard.setData(
                           ClipboardData(text: Profile.exportJson()));
                       setState(() =>
-                          note = 'Profile saved to $path (and copied to clipboard).');
+                          profileNote = 'Profile saved to $path (and copied to clipboard).');
                     } catch (e) {
                       setState(() => error = '$e');
                     }
@@ -301,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (ok == true) {
                       try {
                         final msg = await Profile.import(ctrl.text);
-                        setState(() => note = msg);
+                        setState(() => profileNote = msg);
                       } catch (e) {
                         setState(() => error = '$e');
                       }
@@ -310,10 +351,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: const Text('Import profile'),
                 ),
               ]),
-              if (note != null)
+              if (profileNote != null)
                 Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(note!, style: hint)),
+                    child: Text(profileNote!, style: hint)),
             ]),
           ),
         ),

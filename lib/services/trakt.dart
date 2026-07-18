@@ -113,24 +113,77 @@ class Trakt {
 
   // ---------- Scrobbling ----------
 
+  /// Resolve ANY Stremio video id to Trakt-usable identifiers.
+  /// "tt0944947:3:9" parses directly; prefixed ids like "kitsu:7169:5"
+  /// are translated through the cached metadata (imdb_id + the episode's
+  /// season/episode fields). Returns null when no imdb mapping exists.
+  /// For progress pulled FROM Trakt: find the local item that maps to this
+  /// imdb id (it may live under a kitsu-style id) so the position lands on
+  /// the row the app actually uses. Falls back to imdb-keyed ids.
+  static (String, String) _localTarget(
+      String type, String imdb, int? season, int? episode) {
+    for (final it in Db.items.values.cast<Map>()) {
+      if (it['type'] != type) continue;
+      final itemId = it['id'] as String;
+      String? itImdb = itemId.startsWith('tt') ? itemId : null;
+      final meta = Db.cachedMeta(type, itemId);
+      itImdb ??= (meta?['imdb_id'] ?? meta?['imdbId']) as String?;
+      if (itImdb != imdb) continue;
+      if (type == 'movie') return (itemId, itemId);
+      for (final v in (meta?['videos'] as List? ?? [])) {
+        if (v is Map &&
+            (v['season'] as num?)?.toInt() == season &&
+            (v['episode'] as num?)?.toInt() == episode) {
+          return (itemId, v['id'] as String);
+        }
+      }
+      return (itemId, '$itemId:$season:$episode');
+    }
+    return type == 'movie'
+        ? (imdb, imdb)
+        : (imdb, '$imdb:$season:$episode');
+  }
+
+  static (String, int?, int?)? resolveVideo(String type, String videoId) {
+    final p = videoId.split(':');
+    if (p.first.startsWith('tt')) {
+      if (p.length >= 3) {
+        return (p[0], int.tryParse(p[1]), int.tryParse(p[2]));
+      }
+      return (p[0], null, null);
+    }
+    if (p.length < 2) return null;
+    final itemId = p.take(2).join(':');
+    final meta = Db.cachedMeta(type, itemId);
+    final rawImdb = meta?['imdb_id'] ?? meta?['imdbId'] ?? meta?['imdbid'];
+    if (rawImdb is! String || !rawImdb.startsWith('tt')) return null;
+    int? se, ep;
+    for (final v in (meta?['videos'] as List? ?? [])) {
+      if (v is Map && v['id'] == videoId) {
+        se = (v['season'] as num?)?.toInt();
+        ep = (v['episode'] as num?)?.toInt();
+        break;
+      }
+    }
+    ep ??= int.tryParse(p.last);
+    if (type == 'series') se ??= 1;
+    return (rawImdb, se, ep);
+  }
+
   /// Movies: videoId "tt0111161". Episodes: "tt0944947:3:9".
   static Map<String, dynamic> _scrobbleBody(
       String itemType, String videoId, double progressPct) {
-    if (itemType == 'series') {
-      final parts = videoId.split(':');
-      if (parts.length >= 3) {
-        return {
-          'show': {'ids': {'imdb': parts[0]}},
-          'episode': {
-            'season': int.tryParse(parts[1]) ?? 0,
-            'number': int.tryParse(parts[2]) ?? 0,
-          },
-          'progress': progressPct,
-        };
-      }
+    final r = resolveVideo(itemType, videoId);
+    if (r == null) return const {};
+    if (itemType == 'series' && r.$2 != null && r.$3 != null) {
+      return {
+        'show': {'ids': {'imdb': r.$1}},
+        'episode': {'season': r.$2, 'number': r.$3},
+        'progress': progressPct,
+      };
     }
     return {
-      'movie': {'ids': {'imdb': videoId.split(':').first}},
+      'movie': {'ids': {'imdb': r.$1}},
       'progress': progressPct,
     };
   }
@@ -139,10 +192,12 @@ class Trakt {
   static Future<void> scrobble(
       String action, String itemType, String videoId, double pct) async {
     if (!connected) return;
+    final body = _scrobbleBody(itemType, videoId, pct);
+    if (body.isEmpty) return; // id has no imdb mapping (rare anime sources)
     final c = client()!;
     await http.post(Uri.parse('$_api/scrobble/$action'),
         headers: _headers(c.$1, Db.setting('trakt_access')),
-        body: jsonEncode(_scrobbleBody(itemType, videoId, pct)));
+        body: jsonEncode(body));
   }
 
   // ---------- Push (local -> Trakt) ----------
@@ -170,154 +225,36 @@ class Trakt {
       };
 
   static Map _historyBody(String type, String videoId) {
-    if (type == 'series') {
-      final p = videoId.split(':');
-      if (p.length >= 3) {
-        return {
-          'shows': [
-            {
-              'ids': {'imdb': p[0]},
-              'seasons': [
-                {
-                  'number': int.tryParse(p[1]) ?? 0,
-                  'episodes': [
-                    {'number': int.tryParse(p[2]) ?? 0}
-                  ]
-                }
-              ]
-            }
-          ]
-        };
-      }
+    final r = resolveVideo(type, videoId);
+    if (r == null) return const {};
+    if (type == 'series' && r.$2 != null && r.$3 != null) {
+      return {
+        'shows': [
+          {
+            'ids': {'imdb': r.$1},
+            'seasons': [
+              {
+                'number': r.$2,
+                'episodes': [
+                  {'number': r.$3}
+                ]
+              }
+            ]
+          }
+        ]
+      };
     }
     return {
       'movies': [
-        {'ids': {'imdb': videoId.split(':').first}}
+        {'ids': {'imdb': r.$1}}
       ]
     };
   }
 
-  static void pushStatus(String type, String id, String status) {
-    if (status == 'plan') {
-      _syncPost('watchlist', _watchlistBody(type, id));
-    } else {
-      _syncPost('watchlist/remove', _watchlistBody(type, id));
-      if (status == 'completed' && type == 'movie') {
-        _syncPost('history', _historyBody(type, id));
-      }
-    }
-  }
-
-  /// Removing a title locally removes it from Trakt too - watchlist,
-  /// watch history, AND paused playback progress (the "Continue Watching"
-  /// row on Trakt) - so nothing can resurrect it.
-  static void pushRemoval(String type, String id) {
-    _syncPost('watchlist/remove', _watchlistBody(type, id));
-    _syncPost('history/remove', _watchlistBody(type, id));
-    clearPlayback(id);
-  }
-
-  /// Delete every Trakt playback-progress entry for the given imdb id.
-  /// This is what feeds Trakt's "Continue Watching" row.
-  static Future<void> clearPlayback(String imdbId) async {
-    if (!connected) return;
-    try {
-      await ensureFresh();
-      final c = client()!;
-      final h = _headers(c.$1, Db.setting('trakt_access'));
-      final res = await http.get(Uri.parse('$_api/sync/playback'), headers: h);
-      if (res.statusCode >= 300) return;
-      final list = jsonDecode(res.body) as List;
-      for (final e in list) {
-        final media = (e['movie'] ?? e['show']) as Map?;
-        if (media?['ids']?['imdb'] == imdbId) {
-          await http.delete(Uri.parse('$_api/sync/playback/${e['id']}'),
-              headers: h);
-        }
-      }
-    } catch (_) {/* best effort */}
-  }
-
-  /// Make Trakt mirror this library exactly: any title on Trakt (watchlist,
-  /// watched history, or paused playback) that is NOT in the local library
-  /// gets removed from Trakt. Returns a summary.
-  static Future<String> mirrorLocal() async {
-    if (!connected) return 'Not connected';
-    syncStatus.value = 'Mirroring library to Trakt…';
-    await ensureFresh();
-    final c = client()!;
-    final h = _headers(c.$1, Db.setting('trakt_access'));
-    final keep = {
-      for (final it in Db.items.values.cast<Map>()) it['id'] as String
-    };
-    var removed = 0;
-
-    Future<List> getList(String path) async {
-      final res = await http.get(Uri.parse('$_api/$path'), headers: h);
-      if (res.statusCode >= 300) return const [];
-      final body = jsonDecode(res.body);
-      return body is List ? body : const [];
-    }
-
-    // 1) Paused playback entries ("Continue Watching" on Trakt).
-    for (final e in await getList('sync/playback')) {
-      final media = (e['movie'] ?? e['show']) as Map?;
-      final imdb = media?['ids']?['imdb'];
-      if (imdb != null && !keep.contains(imdb)) {
-        await http.delete(Uri.parse('$_api/sync/playback/${e['id']}'),
-            headers: h);
-        removed++;
-      }
-    }
-
-    // 2) Watched history: whole titles not in the library.
-    final movieIds = <Map>[];
-    for (final e in await getList('sync/watched/movies')) {
-      final imdb = e['movie']?['ids']?['imdb'];
-      if (imdb != null && !keep.contains(imdb)) {
-        movieIds.add({'ids': {'imdb': imdb}});
-      }
-    }
-    final showIds = <Map>[];
-    for (final e in await getList('sync/watched/shows')) {
-      final imdb = e['show']?['ids']?['imdb'];
-      if (imdb != null && !keep.contains(imdb)) {
-        showIds.add({'ids': {'imdb': imdb}});
-      }
-    }
-    if (movieIds.isNotEmpty || showIds.isNotEmpty) {
-      await _syncPost('history/remove', {
-        if (movieIds.isNotEmpty) 'movies': movieIds,
-        if (showIds.isNotEmpty) 'shows': showIds,
-      });
-      removed += movieIds.length + showIds.length;
-    }
-
-    // 3) Watchlist entries not in the library.
-    final wlMovies = <Map>[];
-    final wlShows = <Map>[];
-    for (final e in await getList('sync/watchlist')) {
-      final media = (e['movie'] ?? e['show']) as Map?;
-      final imdb = media?['ids']?['imdb'];
-      if (imdb != null && !keep.contains(imdb)) {
-        (e['movie'] != null ? wlMovies : wlShows)
-            .add({'ids': {'imdb': imdb}});
-      }
-    }
-    if (wlMovies.isNotEmpty || wlShows.isNotEmpty) {
-      await _syncPost('watchlist/remove', {
-        if (wlMovies.isNotEmpty) 'movies': wlMovies,
-        if (wlShows.isNotEmpty) 'shows': wlShows,
-      });
-      removed += wlMovies.length + wlShows.length;
-    }
-
-    syncStatus.value = 'Trakt mirrored at ' + _clock();
-    return 'Removed $removed Trakt entries that are not in your library.';
-  }
-
   static void pushWatched(String type, String videoId, bool watched) {
-    _syncPost(watched ? 'history' : 'history/remove', _historyBody(type, videoId));
+    final body = _historyBody(type, videoId);
+    if (body.isEmpty) return; // no imdb mapping
+    _syncPost(watched ? 'history' : 'history/remove', body);
   }
 
   // ---------- Pull (Trakt -> local) ----------
@@ -359,16 +296,15 @@ class Trakt {
     for (final p in Db.progress.values.cast<Map>()) {
       if (p['watched'] != true) continue;
       final vid = p['videoId'] as String;
-      if (p['type'] == 'series') {
-        final parts = vid.split(':');
-        if (parts.length >= 3) {
-          final imdb = parts[0];
-          final season = int.tryParse(parts[1]) ?? 0;
-          final ep = int.tryParse(parts[2]) ?? 0;
-          showMap.putIfAbsent(imdb, () => {}).putIfAbsent(season, () => []).add(ep);
-        }
-      } else {
-        movieHist.add({'ids': {'imdb': vid.split(':').first}});
+      final r = resolveVideo(p['type'] as String? ?? 'movie', vid);
+      if (r == null) continue; // no imdb mapping
+      if (p['type'] == 'series' && r.$2 != null && r.$3 != null) {
+        showMap
+            .putIfAbsent(r.$1, () => {})
+            .putIfAbsent(r.$2!, () => [])
+            .add(r.$3!);
+      } else if (p['type'] != 'series') {
+        movieHist.add({'ids': {'imdb': r.$1}});
       }
     }
     final showHist = [
@@ -450,13 +386,15 @@ class Trakt {
           if (e['movie'] != null) {
             final imdb = e['movie']?['ids']?['imdb'];
             if (imdb == null) continue;
-            Db.mergePct('movie', imdb, imdb, pct);
+            final t = _localTarget('movie', imdb, null, null);
+            Db.mergePct('movie', t.$1, t.$2, pct);
           } else if (e['show'] != null && e['episode'] != null) {
             final imdb = e['show']?['ids']?['imdb'];
             if (imdb == null) continue;
-            final vid =
-                '$imdb:${e['episode']?['season']}:${e['episode']?['number']}';
-            Db.mergePct('series', imdb, vid, pct);
+            final se = (e['episode']?['season'] as num?)?.toInt();
+            final ep = (e['episode']?['number'] as num?)?.toInt();
+            final t = _localTarget('series', imdb, se, ep);
+            Db.mergePct('series', t.$1, t.$2, pct);
           }
         }
       }

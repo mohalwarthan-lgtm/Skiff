@@ -1,4 +1,4 @@
-name: skiff
+name: skiffbox
 description: A Stremio-compatible media hub with real library management, Trakt sync, and offline downloads.
 publish_to: 'none'
 version: 1.0.0

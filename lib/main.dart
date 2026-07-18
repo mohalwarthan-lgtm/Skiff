@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'screens/addons_screen.dart';
 import 'screens/home_screen.dart';
@@ -10,10 +11,38 @@ import 'screens/settings_screen.dart';
 import 'services/db.dart';
 import 'services/trakt.dart';
 
+/// The exe rename (skiff -> skiffbox) moved the app-data folder. If the
+/// new folder is empty and the old one exists, copy everything across once
+/// - library, settings, downloads - so nothing is lost.
+Future<void> _migrateOldSkiffData() async {
+  try {
+    final cur = await getApplicationSupportDirectory();
+    if (!cur.path.contains('skiffbox')) return;
+    final hasData = await cur
+        .list()
+        .where((e) => !e.path.endsWith('.tmp'))
+        .isEmpty
+        .then((empty) => !empty);
+    if (hasData) return;
+    final old = Directory(cur.path.replaceAll('skiffbox', 'skiff'));
+    if (!await old.exists()) return;
+    await for (final entity in old.list(recursive: true)) {
+      final rel = entity.path.substring(old.path.length);
+      if (entity is Directory) {
+        await Directory(cur.path + rel).create(recursive: true);
+      } else if (entity is File) {
+        await File(cur.path + rel).parent.create(recursive: true);
+        await entity.copy(cur.path + rel);
+      }
+    }
+  } catch (_) {/* migration is best-effort; a fresh start still works */}
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized(); // window control (fullscreen etc.)
   await windowManager.setTitle('SkiffBox');
+  await _migrateOldSkiffData();
   await Db.init();
   // One engine, loaded once, shared by the Dart side and the native texture
   // plugins alike. The cloud build replaces the DLL next to skiff.exe with a
