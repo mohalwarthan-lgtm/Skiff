@@ -16,8 +16,6 @@ const statuses = <(String, String)>[
   ('watching', 'Watching'),
   ('plan', 'Plan to watch'),
   ('completed', 'Completed'),
-  ('on_hold', 'On hold'),
-  ('dropped', 'Dropped'),
 ];
 
 String statusLabel(String key) =>

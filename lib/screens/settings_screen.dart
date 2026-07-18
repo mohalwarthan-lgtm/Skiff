@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/profile.dart';
 import '../config.dart';
@@ -17,6 +18,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? device;
   Timer? pollTimer;
   String? note, error;
+  late final dirCtrl =
+      TextEditingController(text: Db.setting('download_dir') ?? '');
   final idCtrl = TextEditingController();
   final secretCtrl = TextEditingController();
 
@@ -210,16 +213,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
-            child: TextFormField(
-              initialValue: Db.setting('download_dir') ?? '',
-              decoration: const InputDecoration(
-                  labelText: 'Download folder',
-                  helperText:
-                      'Empty = app data folder. Set an absolute path like '
-                      'D:/Media/Skiff to store episodes there instead. '
-                      'Applies to new downloads.'),
-              onChanged: (v) => Db.setSetting('download_dir', v.trim()),
-            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(
+                child: TextField(
+                  controller: dirCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Download folder',
+                      helperText:
+                          'Empty = app data folder. Already-downloaded titles '
+                          'keep playing from where they are; only new '
+                          'downloads use the new folder.'),
+                  onChanged: (v) => Db.setSetting('download_dir', v.trim()),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FilledButton.tonal(
+                  onPressed: () async {
+                    final dir = await getDirectoryPath();
+                    if (dir != null && dir.isNotEmpty) {
+                      dirCtrl.text = dir;
+                      Db.setSetting('download_dir', dir);
+                      setState(() => note = 'New downloads will go to ' + dir);
+                    }
+                  },
+                  child: const Text('Browse…'),
+                ),
+              ),
+            ]),
           ),
         ),
         const SizedBox(height: 20),
