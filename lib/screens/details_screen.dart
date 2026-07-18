@@ -4,7 +4,6 @@ import '../services/addons.dart';
 import '../services/db.dart';
 import '../services/downloads.dart';
 import '../services/net.dart';
-import '../services/torbox.dart';
 import '../services/trakt.dart';
 import 'player_screen.dart';
 
@@ -555,7 +554,7 @@ class _EpisodeTile extends StatelessWidget {
 }
 
 /// Bottom sheet listing streams from every enabled addon, with Play and
-/// Download actions per stream. infoHash-only streams resolve through TorBox.
+/// Download actions per stream.
 class _StreamSheet extends StatefulWidget {
   final String type, itemId, videoId, displayName, videoTitle;
   final String? poster;
@@ -588,18 +587,11 @@ class _StreamSheetState extends State<_StreamSheet> {
   }
 
   Future<String> _resolveUrl(Map s) async {
-    String raw;
-    if (s['url'] != null) {
-      raw = s['url'];
-    } else if (s['infoHash'] != null) {
-      setState(() => busy = 'Asking TorBox to fetch this torrent…');
-      try {
-        raw = await TorBox.resolve(s['infoHash'], s['fileIdx']);
-      } finally {
-        if (mounted) setState(() => busy = null);
-      }
-    } else {
-      throw 'This stream has no playable source.';
+    final raw = s['url'] as String?;
+    if (raw == null) {
+      throw 'This stream is torrent-only with no direct link. Pick one of '
+          'the AIOStreams entries instead — your debrid services are '
+          'configured there and those streams play directly.';
     }
     // Addon /resolve endpoints answer with redirects or a text body holding
     // the real CDN link — walk that chain so the player gets a direct URL.

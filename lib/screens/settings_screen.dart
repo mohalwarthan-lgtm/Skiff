@@ -28,6 +28,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     pollTimer?.cancel();
+    dirCtrl.dispose();
+    cacheCtrl.dispose();
     super.dispose();
   }
 

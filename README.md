@@ -1,44 +1,79 @@
-# Skiff (Flutter edition)
+<p align="center">
+  <img src="assets/logo.png" width="140" alt="SkiffBox logo" />
+</p>
 
-A Stremio-compatible media hub with the things Stremio lacks: real library management (Watching / Plan to watch / Completed / On hold / Dropped, per-episode watched flags, resume), hands-off two-way Trakt sync, and **offline downloads** (episodes + subtitles saved for travel, in their own Downloads tab).
+<h1 align="center">SkiffBox</h1>
 
-Everything content-related comes from the add-ons you install (AIOMetadata, AIOStreams, anything protocol-compliant). Torrent-only streams are handled by **TorBox server-side** — this app contains no torrent engine at all. Playback uses media_kit, which bundles its own video engine (MKV/HEVC/embedded tracks just work; nothing to install).
+<p align="center">
+  A lightweight, no-nonsense media hub for Windows.<br/>
+  Powered by Stremio add-ons. Synced with Trakt. Yours to configure.
+</p>
 
-## Build it WITHOUT installing anything on your PC
+---
 
-Your computer never compiles this. GitHub's servers do:
+SkiffBox is a desktop app for people who want a fast, minimal alternative to Stremio: a clean library, a capable player, real offline downloads, and deep two-way Trakt sync — while **all content, labeling, and sources come from the add-ons you choose**. The app itself stays out of the way.
 
-1. Go to **github.com** and sign in (or create a free account).
-2. Top-right **+** → **New repository** → name it `skiff` → set it to **Private** → **Create repository**.
-3. On the new repo page, click **uploading an existing file**. Drag **everything inside this folder** (including the `.github` folder — if your unzipper hid it, enable "show hidden files") into the page. Click **Commit changes**.
-4. Click the **Actions** tab. A build called **Build Skiff** starts by itself. Wait for the green check (5–15 minutes).
-5. Click the finished run → scroll to **Artifacts** → download **skiff-windows** → unzip anywhere → run **skiff.exe**.
+## Features
 
-That's the whole loop, forever: change code → push → download a fresh app.
+**Stremio add-on protocol**
+- Install any Stremio-compatible add-on by URL (metadata add-ons like AIOMetadata, stream add-ons like AIOStreams with your debrid services).
+- Catalogs, search, metadata, streams, and subtitles all flow from your add-ons, exactly as you configured them — SkiffBox adds no labels or re-ranking of its own.
+- Search results stay grouped per catalog (Movies / Series / Anime…), mirroring your metadata add-on's own separation.
+- Related-title chips (prequels, sequels, franchise entries) when your metadata add-on provides them.
 
-### Optional: one-click Trakt login for the app
-In the repo: **Settings → Secrets and variables → Actions → New repository secret**. Add `TRAKT_CLIENT_ID` and `TRAKT_CLIENT_SECRET` (from a free API app you create once at trakt.tv/oauth/applications). Re-run the build; the app's Settings will then show a single **Connect Trakt** button.
+**Library**
+- Shelves: Watching, Plan to watch, Completed — plus per-episode watched flags.
+- Continue Watching with live progress, episode release dates, and upcoming-episode markers.
 
-## Using the app
+**Trakt — full two-way sync**
+- One-click connect. Playback scrobbles live; shelf changes and watched flags push instantly; your history pulls on launch and every 30 minutes.
+- Partial episode positions carry over **both ways** — pause on another device, resume in SkiffBox at the same spot (and vice versa). Whoever watched most recently wins.
+- Removing a title removes it everywhere on Trakt too: watchlist, history, and Continue Watching.
+- "Clean up Trakt" makes Trakt mirror your local library exactly.
+- Automatic episode-numbering translation for shows where Trakt and your metadata disagree (e.g. anime listed as one long season on Trakt but three seasons in TVDB order) — watched history and positions land on the right episode on both sides.
+- Anime-friendly: mixed ID setups (IMDb-keyed shows with Kitsu-keyed episodes) are resolved automatically.
 
-1. **Add-ons** — paste your configured AIOMetadata / AIOStreams manifest URLs.
-2. **Discover** — browse/search every catalog your add-ons provide.
-3. Any title → set a shelf, browse episodes, tap an episode → stream list appears. **Play** streams instantly; the **download icon** saves the episode plus all add-on subtitles for offline.
-4. **Downloads** — your offline shelf: play without internet (with subtitle picker), delete to free space.
-5. **Settings** — connect Trakt (fully automatic sync after that) and add your TorBox API key (only needed for torrent-only P2P streams).
+**Player**
+- Full-codec engine bundled by the cloud build — TrueHD, DTS, everything plays. A one-click restore script falls back to the safe stock engine if ever needed.
+- Fullscreen (F / double-click), keyboard shortcuts, speed control, audio & subtitle track pickers with clean language labels.
+- Subtitle styling with live preview: size, position, outline, background box, and delay — all persisted.
+- Graceful audio-codec fallback: if a track can't decode, playback continues on another track with a small dismissible notice instead of a blocking error.
 
-## Project layout
+**Downloads**
+- Download any stream for offline watching, subtitles included.
+- Multi-select episodes (long-press to start selecting) or queue a whole season; pick the quality from chips detected from what's actually available — within it, your add-on's own ranking (cached links first) decides.
+- Downloads are grouped by show, episodes stacked under one card.
+- Choose your download folder and your streaming-cache folder (keep big buffers off a tight C: drive). Previously downloaded titles keep playing from wherever they already live.
 
-```
-lib/services/   addons (Stremio protocol) · db (Hive) · trakt · torbox · downloads
-lib/screens/    library · discover · details · player · downloads · addons · settings
-.github/        cloud build workflow (Windows artifact)
-```
+**Profiles**
+- Export your whole setup — add-on URLs, library, watch progress, settings, Trakt login — to one small JSON file; import it on any other machine running SkiffBox and continue where you left off.
+- Treat the file like a password: it contains your Trakt session and add-on tokens.
 
-Notes: the `windows/` platform folder is intentionally absent — the cloud build generates it. Written offline; if the first cloud build fails, the full error log is on the Actions run page — paste it to Claude and iterate without touching your machine.
+## Getting the app
 
-## Roadmap
-- [ ] Storage cap + auto-cleanup for downloads; download whole seasons in one tap
-- [ ] Catalog paging and genre filters (`extra.options`)
-- [ ] Android build job in the same workflow (Flutter makes this nearly free)
-- [ ] Trakt conflict resolution beyond "local shelf choice wins"
+Every push to this repository triggers a cloud build. Grab the newest one:
+
+1. Open the **Actions** tab and click the latest green run.
+2. Download the **skiffbox-windows** artifact.
+3. Unzip anywhere and run `skiffbox.exe`. No installer, no dependencies.
+
+## First-run setup
+
+1. **Add-ons** tab → paste your add-on manifest URLs (your configured AIOMetadata and AIOStreams links, or any Stremio add-ons you use).
+2. **Settings → Trakt → Connect** → enter the code at trakt.tv/activate. Sync is automatic from then on.
+3. Optional: set your download and cache folders under **Settings → Storage**.
+
+That's it — Home fills with your catalogs, and everything else follows from your add-on configuration.
+
+## Building it yourself
+
+The repository contains only the Dart/Flutter source; Windows platform files are generated fresh on every build.
+
+1. Fork the repo.
+2. Add two repository secrets (Settings → Secrets → Actions): `TRAKT_CLIENT_ID` and `TRAKT_CLIENT_SECRET` from your own [Trakt API app](https://trakt.tv/oauth/applications).
+3. Push any change — the workflow compiles the app, stamps the icon, upgrades the media engine to the full-codec build, and publishes the artifact.
+
+## Notes
+
+- SkiffBox is a client. It ships with no content and no sources; everything you see comes from add-ons **you** install and configure, and you are responsible for what those add-ons access.
+- Windows today. The codebase is Flutter, so other platforms are a build target away.

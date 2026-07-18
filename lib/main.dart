@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -107,6 +108,15 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
+/// Thin line-art icons (variable weight 300); the filled face appears only
+/// inside the selection pill.
+NavigationRailDestination _dest(IconData symbol, String label) =>
+    NavigationRailDestination(
+      icon: Icon(symbol, weight: 300, fill: 0),
+      selectedIcon: Icon(symbol, weight: 400, fill: 1),
+      label: Text(label),
+    );
+
 class _ShellState extends State<Shell> with WindowListener {
   int index = 0;
 
@@ -176,18 +186,12 @@ class _ShellState extends State<Shell> with WindowListener {
               ]),
             ),
             destinations: const [
-              NavigationRailDestination(
-                  icon: Icon(Icons.home_outlined), label: Text('Home')),
-              NavigationRailDestination(
-                  icon: Icon(Icons.video_library_outlined), label: Text('Library')),
-              NavigationRailDestination(
-                  icon: Icon(Icons.explore_outlined), label: Text('Discover')),
-              NavigationRailDestination(
-                  icon: Icon(Icons.download_outlined), label: Text('Downloads')),
-              NavigationRailDestination(
-                  icon: Icon(Icons.extension_outlined), label: Text('Add-ons')),
-              NavigationRailDestination(
-                  icon: Icon(Icons.settings_outlined), label: Text('Settings')),
+              _dest(Symbols.home, 'Home'),
+              _dest(Symbols.video_library, 'Library'),
+              _dest(Symbols.explore, 'Discover'),
+              _dest(Symbols.download, 'Downloads'),
+              _dest(Symbols.extension, 'Add-ons'),
+              _dest(Symbols.settings, 'Settings'),
             ],
           ),
           const VerticalDivider(width: 1),
