@@ -174,16 +174,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text(error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
         const SizedBox(height: 20),
-        const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        const Text('DOWNLOADS', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: TextFormField(
+              initialValue: Db.setting('download_dir') ?? '',
+              decoration: const InputDecoration(
+                  labelText: 'Download folder',
+                  helperText:
+                      'Empty = app data folder. Set an absolute path like '
+                      'D:/Media/Skiff to store episodes there instead. '
+                      'Applies to new downloads.'),
+              onChanged: (v) => Db.setSetting('download_dir', v.trim()),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+                const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                   'Move Skiff between devices: export writes one file (and '
-                  'copies it to your clipboard) with your add-ons, library, '
-                  'progress, and settings. Import it on any other platform '
-                  'running Skiff.',
+                  'copies it to your clipboard) containing your add-ons, '
+                  'library, watch progress, settings, and your Trakt login '
+                  'tokens - importing on another device signs you in '
+                  'automatically. Treat the file like a password.',
                   style: hint),
               const SizedBox(height: 8),
               Row(children: [
