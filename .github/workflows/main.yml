@@ -14,7 +14,7 @@ jobs:
           channel: stable
       # Adds the windows/ platform scaffolding (kept out of the repo on purpose).
       - name: Ensure Windows platform files
-        run: flutter create --platforms=windows --project-name skiff .
+        run: flutter create --platforms=windows --project-name skiffbox .
       - name: App icon
         shell: pwsh
         run: Copy-Item assets/app_icon.ico windows/runner/resources/app_icon.ico -Force
@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
         run: |
           # There must be exactly ONE libmpv in the app: media_kit's native
-          # plugins link the DLL next to skiff.exe by name. So we upgrade
+          # plugins link the DLL next to the exe by name. So we upgrade
           # THAT file in place (the documented way to upgrade libmpv-based
           # players), instead of loading a second engine beside it.
           $api = Invoke-RestMethod "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
@@ -50,8 +50,8 @@ jobs:
           Set-Content "$out/RESTORE-SAFE-ENGINE.bat" 'copy /y "%~dp0libmpv-2.dll.original" "%~dp0libmpv-2.dll"'
           Write-Host 'Engine swapped; original kept as libmpv-2.dll.original'
       - name: Package
-        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath skiff-windows.zip
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath skiffbox-windows.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: skiff-windows
-          path: skiff-windows.zip
+          name: skiffbox-windows
+          path: skiffbox-windows.zip
