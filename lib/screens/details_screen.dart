@@ -88,7 +88,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
             .toLowerCase();
 
     // Sample the first episode to learn which qualities exist here.
-    setState(() => busy = 'Checking available qualities…');
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Checking available qualities…'),
+        duration: Duration(seconds: 2)));
     var sample = <Map>[];
     try {
       final groups = await Addons.streamsFor(widget.type, eps.first['id']);
@@ -96,7 +98,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
           .whereType<Map>()
           .toList();
     } catch (_) {}
-    if (mounted) setState(() => busy = null);
 
     const order = ['2160p', '4k', '1080p', '720p', '480p'];
     final found = [
