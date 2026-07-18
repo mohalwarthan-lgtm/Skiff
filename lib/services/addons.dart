@@ -155,35 +155,43 @@ class Addons {
     return out;
   }
 
-  /// One search across every search-capable catalog of every enabled addon,
-  /// merged and deduplicated by type+id.
-  static Future<List<Map>> searchAll(String query) async {
-    final futures = <Future<List>>[];
+  /// Search every capable catalog but keep results grouped per catalog,
+  /// so a metadata add-on's own separation (Movies / Series / Anime ...)
+  /// carries straight through, exactly like Stremio renders it.
+  static Future<List<Map>> searchGrouped(String query) async {
+    final futures = <Future<Map?>>[];
     for (final a in enabled()) {
       final m = a['manifest'] as Map;
       for (final c in (m['catalogs'] as List? ?? [])) {
         final hasSearch = ((c['extra'] as List?) ?? [])
             .any((e) => e is Map && e['name'] == 'search');
-        if (hasSearch) {
-          futures.add(fetchCatalog(
-                  a['transportUrl'], c['type'], c['id'], {'search': query})
-              .catchError((_) => <dynamic>[]));
-        }
-      }
-    }
-    final results = await Future.wait(futures);
-    final seen = <String>{};
-    final merged = <Map>[];
-    for (final page in results) {
-      for (final item in page) {
-        if (item is Map && item['id'] != null) {
-          if (seen.add('${item['type']}|${item['id']}')) {
-            merged.add(item.cast<String, dynamic>());
+        if (!hasSearch) continue;
+        futures.add(() async {
+          try {
+            final items = await fetchCatalog(
+                a['transportUrl'], c['type'], c['id'], {'search': query});
+            if (items.isEmpty) return null;
+            final seen = <String>{};
+            final rows = <Map>[];
+            for (final it in items) {
+              if (it is Map &&
+                  it['id'] != null &&
+                  seen.add('${it['type']}|${it['id']}')) {
+                rows.add(it.cast<String, dynamic>());
+              }
+            }
+            return {
+              'title': '${c['name'] ?? c['id']}',
+              'addon': '${m['name'] ?? ''}',
+              'items': rows,
+            };
+          } catch (_) {
+            return null;
           }
-        }
+        }());
       }
     }
-    return merged;
+    return (await Future.wait(futures)).whereType<Map>().toList();
   }
 
   static Future<List<Map>> subtitlesFor(String type, String id) async {

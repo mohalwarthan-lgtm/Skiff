@@ -106,8 +106,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
         resumed = true;
         final p = Db.prog(widget.type, widget.itemId, widget.videoId);
         final pos = (p?['position'] ?? 0.0) as num;
-        if (p?['watched'] != true && pos > 30 && pos < d.inSeconds - 30) {
-          player.seek(Duration(seconds: pos.toInt()));
+        final pct = (p?['pct'] ?? 0.0) as num;
+        if (p?['watched'] != true) {
+          if (pos > 30 && pos < d.inSeconds - 30) {
+            player.seek(Duration(seconds: pos.toInt()));
+          } else if (pct > 2 && pct < 98) {
+            // Position synced from Trakt (watched elsewhere).
+            player.seek(
+                Duration(seconds: (d.inSeconds * pct / 100).round()));
+          }
         }
       }
     });

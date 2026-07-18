@@ -437,6 +437,31 @@ class Trakt {
         nW++;
       }
     }
+    // Carry over partial positions watched elsewhere (Trakt playback).
+    try {
+      final c2 = client()!;
+      final h2 = _headers(c2.$1, Db.setting('trakt_access'));
+      final res =
+          await http.get(Uri.parse('$_api/sync/playback'), headers: h2);
+      if (res.statusCode < 300) {
+        for (final e in (jsonDecode(res.body) as List)) {
+          final pct = (e['progress'] as num?)?.toDouble() ?? 0;
+          if (pct < 2 || pct > 98) continue;
+          if (e['movie'] != null) {
+            final imdb = e['movie']?['ids']?['imdb'];
+            if (imdb == null) continue;
+            Db.mergePct('movie', imdb, imdb, pct);
+          } else if (e['show'] != null && e['episode'] != null) {
+            final imdb = e['show']?['ids']?['imdb'];
+            if (imdb == null) continue;
+            final vid =
+                '$imdb:${e['episode']?['season']}:${e['episode']?['number']}';
+            Db.mergePct('series', imdb, vid, pct);
+          }
+        }
+      }
+    } catch (_) {/* progress carry-over is best effort */}
+
     syncStatus.value = 'Synced at ' + _clock();
     return 'Synced $nM movies, $nS shows, $nW watchlist items.';
   }

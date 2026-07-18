@@ -251,7 +251,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                  'Move Skiff between devices: export writes one file (and '
+                  'Move SkiffBox between devices: export writes one file (and '
                   'copies it to your clipboard) containing your add-ons, '
                   'library, watch progress, settings, and your Trakt login '
                   'tokens - importing on another device signs you in '

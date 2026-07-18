@@ -73,6 +73,52 @@ class _DetailsScreenState extends State<DetailsScreen> {
   /// on offer; per episode the queue takes the top-ranked stream of that
   /// quality - and since AIOStreams sorts cached links, language, and
   /// sources per your setup, the top match is the best cached one.
+  bool selecting = false;
+  final selected = <String>{};
+
+  /// Relation links some metadata add-ons provide (prequels, sequels,
+  /// franchise entries) - rendered as chips for one-tap navigation.
+  Widget _relatedLinks(Map m) {
+    final rel = <(String, String, String, String)>[];
+    for (final l in (m['links'] as List? ?? [])) {
+      if (l is! Map) continue;
+      final url = l['url'] as String? ?? '';
+      if (!url.startsWith('stremio:///detail/')) continue;
+      final parts = url.substring('stremio:///detail/'.length).split('/');
+      if (parts.length < 2) continue;
+      rel.add((
+        '${l['category'] ?? 'Related'}',
+        '${l['name'] ?? parts[1]}',
+        parts[0],
+        Uri.decodeComponent(parts[1]),
+      ));
+    }
+    if (rel.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('RELATED',
+            style: TextStyle(
+                fontSize: 11,
+                letterSpacing: 1.5,
+                color: Theme.of(context).hintColor)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final r in rel)
+            ActionChip(
+              label: Text(
+                  r.$1.toLowerCase() == r.$2.toLowerCase()
+                      ? r.$2
+                      : '${r.$1} · ${r.$2}',
+                  style: const TextStyle(fontSize: 12)),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => DetailsScreen(type: r.$3, id: r.$4))),
+            ),
+        ]),
+      ]),
+    );
+  }
+
   Future<void> _downloadSeason() async {
     final m = meta;
     if (m == null || season == null) return;
@@ -81,7 +127,30 @@ class _DetailsScreenState extends State<DetailsScreen> {
         .toList()
       ..sort((a, b) =>
           ((a['episode'] ?? 0) as num).compareTo((b['episode'] ?? 0) as num));
-    if (eps.isEmpty) return;
+    await _batchDownload(eps);
+  }
+
+  Future<void> _downloadSelected() async {
+    final m = meta;
+    if (m == null || selected.isEmpty) return;
+    final eps = (m['videos'] as List? ?? [])
+        .where((v) => selected.contains(v['id']))
+        .toList()
+      ..sort((a, b) {
+        final bySeason =
+            ((a['season'] ?? 0) as num).compareTo((b['season'] ?? 0) as num);
+        if (bySeason != 0) return bySeason;
+        return ((a['episode'] ?? 0) as num)
+            .compareTo((b['episode'] ?? 0) as num);
+      });
+    setState(() => selecting = false);
+    await _batchDownload(eps);
+    selected.clear();
+  }
+
+  Future<void> _batchDownload(List eps) async {
+    final m = meta;
+    if (m == null || eps.isEmpty) return;
 
     String textOf(Map st) =>
         '${st['name'] ?? ''} ${st['title'] ?? ''} ${st['description'] ?? ''}'
@@ -114,7 +183,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) => AlertDialog(
-          title: Text('Download season $season'),
+          title: Text('Download ${eps.length} episode${eps.length == 1 ? '' : 's'}'),
           content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -163,7 +232,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Queuing season $season — episodes download one by '
+          content: Text('Queuing ${eps.length} episode${eps.length == 1 ? '' : 's'} — they download one by '
               'one. Track them in the Downloads tab.')));
     }
 
@@ -310,6 +379,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                     Text(metaLine, style: TextStyle(color: Theme.of(context).hintColor)),
                     const SizedBox(height: 10),
                     if (m['description'] != null) Text(m['description']),
+                    _relatedLinks(m),
                     const SizedBox(height: 14),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       for (final s in statuses)
@@ -356,10 +426,30 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 onChanged: (v) => setState(() => season = v),
               ),
               const Spacer(),
-              TextButton.icon(
-                  icon: const Icon(Icons.download_outlined, size: 18),
-                  label: const Text('Download season'),
-                  onPressed: _downloadSeason),
+              if (!selecting) ...[
+                IconButton(
+                    icon: const Icon(Icons.checklist, size: 20),
+                    tooltip: 'Select episodes to download',
+                    onPressed: () => setState(() => selecting = true)),
+                TextButton.icon(
+                    icon: const Icon(Icons.download_outlined, size: 18),
+                    label: const Text('Download season'),
+                    onPressed: _downloadSeason),
+              ] else ...[
+                Text('${selected.length} selected',
+                    style: TextStyle(
+                        color: Theme.of(context).hintColor, fontSize: 12)),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                    onPressed: selected.isEmpty ? null : _downloadSelected,
+                    child: Text('Download (${selected.length})')),
+                TextButton(
+                    onPressed: () => setState(() {
+                          selecting = false;
+                          selected.clear();
+                        }),
+                    child: const Text('Cancel')),
+              ],
             ]),
             const SizedBox(height: 6),
             for (final v in videos)
@@ -367,6 +457,18 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 type: widget.type,
                 itemId: widget.id,
                 video: v,
+                selecting: selecting,
+                isSelected: selected.contains(v['id']),
+                onSelectToggle: () => setState(() {
+                  final id = v['id'] as String;
+                  selected.contains(id)
+                      ? selected.remove(id)
+                      : selected.add(id);
+                }),
+                onStartSelect: () => setState(() {
+                  selecting = true;
+                  selected.add(v['id'] as String);
+                }),
                 onPlay: () => _openStreams(
                     v['id'],
                     'S${v['season']} E${v['episode']} · ${v['title'] ?? v['name'] ?? ''}'),
@@ -382,13 +484,23 @@ class _DetailsScreenState extends State<DetailsScreen> {
 class _EpisodeTile extends StatelessWidget {
   final String type, itemId;
   final Map video;
-  final VoidCallback onPlay, onChanged;
+  final bool selecting, isSelected;
+  final VoidCallback onPlay, onChanged, onSelectToggle, onStartSelect;
   const _EpisodeTile(
       {required this.type,
       required this.itemId,
       required this.video,
+      required this.selecting,
+      required this.isSelected,
+      required this.onSelectToggle,
+      required this.onStartSelect,
       required this.onPlay,
       required this.onChanged});
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -398,14 +510,30 @@ class _EpisodeTile extends StatelessWidget {
     final p = Db.prog(type, itemId, vid);
     final pos = (p?['position'] ?? 0.0) as num;
     final dur = (p?['duration'] ?? 0.0) as num;
+
+    // Release date from the metadata add-on ('released' per episode).
+    final rel = DateTime.tryParse('${video['released'] ?? ''}');
+    final upcoming = rel != null && rel.isAfter(DateTime.now());
+    final relStr = rel == null
+        ? null
+        : '${rel.day} ${_months[rel.month - 1]} ${rel.year}';
+
+    final hint = Theme.of(context).hintColor;
     return ListTile(
       dense: true,
-      leading: Text('E${(video['episode'] ?? '').toString().padLeft(2, '0')}',
-          style: const TextStyle(fontFamily: 'monospace')),
-      title: Text(video['title'] ?? video['name'] ?? vid),
+      leading: selecting
+          ? Checkbox(value: isSelected, onChanged: (_) => onSelectToggle())
+          : Text('E${(video['episode'] ?? '').toString().padLeft(2, '0')}',
+              style: const TextStyle(fontFamily: 'monospace')),
+      title: Text(video['title'] ?? video['name'] ?? vid,
+          style: upcoming ? TextStyle(color: hint) : null),
       subtitle: (dur > 0 && !watched && pos > 60)
-          ? LinearProgressIndicator(value: (pos / dur).clamp(0, 1).toDouble(), minHeight: 2)
-          : null,
+          ? LinearProgressIndicator(
+              value: (pos / dur).clamp(0, 1).toDouble(), minHeight: 2)
+          : relStr != null
+              ? Text(upcoming ? 'Upcoming · $relStr' : relStr,
+                  style: TextStyle(fontSize: 11, color: hint))
+              : null,
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
         if (downloaded)
           const Icon(Icons.download_done, size: 18, color: Color(0xFF63C589)),
@@ -420,7 +548,8 @@ class _EpisodeTile extends StatelessWidget {
           },
         ),
       ]),
-      onTap: onPlay,
+      onLongPress: selecting ? null : onStartSelect,
+      onTap: selecting ? onSelectToggle : onPlay,
     );
   }
 }

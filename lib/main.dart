@@ -13,7 +13,7 @@ import 'services/trakt.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized(); // window control (fullscreen etc.)
-  await windowManager.setTitle('Skiff');
+  await windowManager.setTitle('SkiffBox');
   await Db.init();
   // One engine, loaded once, shared by the Dart side and the native texture
   // plugins alike. The cloud build replaces the DLL next to skiff.exe with a
@@ -41,22 +41,28 @@ class SkiffApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const bg = Color(0xFF0D1015);
-    const panel = Color(0xFF151A21);
-    const accent = Color(0xFFE8B15C);
+    // SkiffBox palette: deep navy sea, cyan water, orange hull.
+    const bg = Color(0xFF0A1522);
+    const panel = Color(0xFF122036);
+    const orange = Color(0xFFF4791F);
+    const cyan = Color(0xFF35D6E8);
     return MaterialApp(
-      title: 'Skiff',
+      title: 'SkiffBox',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bg,
         colorScheme: const ColorScheme.dark(
-          primary: accent,
-          onPrimary: Color(0xFF201502),
+          primary: orange,
+          onPrimary: Color(0xFF2A1200),
+          secondary: cyan,
+          onSecondary: Color(0xFF00252B),
+          secondaryContainer: Color(0xFF0F3A44),
+          onSecondaryContainer: cyan,
           surface: panel,
         ),
         cardColor: panel,
-        dividerColor: const Color(0xFF242D39),
+        dividerColor: const Color(0xFF1C3049),
         useMaterial3: true,
       ),
       home: const Shell(),
@@ -125,13 +131,18 @@ class _ShellState extends State<Shell> with WindowListener {
             selectedIndex: index,
             onDestinationSelected: (i) => setState(() => index = i),
             labelType: NavigationRailLabelType.all,
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('SKIFF',
-                  style: TextStyle(
-                      color: Color(0xFFE8B15C),
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 3)),
+            leading: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Column(children: [
+                Image.asset('assets/logo.png', width: 44),
+                const SizedBox(height: 4),
+                const Text('SKIFFBOX',
+                    style: TextStyle(
+                        color: Color(0xFFF4791F),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 9,
+                        letterSpacing: 2)),
+              ]),
             ),
             destinations: const [
               NavigationRailDestination(

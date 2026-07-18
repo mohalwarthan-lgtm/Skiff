@@ -132,6 +132,22 @@ class Db {
   static bool isWatched(String type, String itemId, String videoId) =>
       prog(type, itemId, videoId)?['watched'] == true;
 
+  /// Merge a Trakt playback percentage (watched elsewhere; no absolute
+  /// seconds known). The player resumes from it and Continue Watching
+  /// shows it; real local playback overwrites it with exact seconds.
+  static void mergePct(String type, String itemId, String videoId, double pct) {
+    final prev = prog(type, itemId, videoId);
+    if (prev?['watched'] == true) return;
+    progress.put(progKey(type, itemId, videoId), {
+      ...?prev,
+      'itemId': itemId,
+      'type': type,
+      'videoId': videoId,
+      'pct': pct,
+      'updatedAt': now(),
+    });
+  }
+
   static void setProgress(
       String type, String itemId, String videoId, double position, double duration) {
     final watched = duration > 0 && position / duration >= 0.9;

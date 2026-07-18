@@ -137,7 +137,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       subtitle: sub,
                       progress: (c['duration'] ?? 0) > 0
                           ? (c['position'] as num) / (c['duration'] as num)
-                          : null,
+                          : ((c['pct'] ?? 0) as num) > 0
+                              ? ((c['pct'] as num) / 100)
+                              : null,
                       onTap: () => _open(c['type'], c['itemId']),
                     ),
                     Positioned(

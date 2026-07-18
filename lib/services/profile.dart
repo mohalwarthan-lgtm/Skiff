@@ -45,7 +45,7 @@ class Profile {
     }
     final data = jsonDecode(text);
     if (data is! Map || data['app'] != 'skiff') {
-      throw 'This does not look like a Skiff profile.';
+      throw 'This does not look like a SkiffBox profile.';
     }
     var n = 0;
     Future<void> apply(String key, dynamic box) async {
