@@ -144,19 +144,23 @@ class Trakt {
         : (imdb, '$imdb:$season:$episode');
   }
 
-  static (String, int?, int?)? resolveVideo(String type, String videoId) {
+  static (String, int?, int?)? resolveVideo(
+      String type, String itemId, String videoId) {
     final p = videoId.split(':');
-    if (p.first.startsWith('tt')) {
-      if (p.length >= 3) {
-        return (p[0], int.tryParse(p[1]), int.tryParse(p[2]));
-      }
-      return (p[0], null, null);
+    // Fully imdb-shaped episode id: parse directly.
+    if (p.first.startsWith('tt') && p.length >= 3) {
+      return (p[0], int.tryParse(p[1]), int.tryParse(p[2]));
     }
-    if (p.length < 2) return null;
-    final itemId = p.take(2).join(':');
+    // Otherwise anchor on the item we KNOW this video belongs to. Handles
+    // mixed setups (imdb-keyed item + kitsu-keyed episodes) cleanly.
+    String? imdb = itemId.startsWith('tt') ? itemId : null;
     final meta = Db.cachedMeta(type, itemId);
-    final rawImdb = meta?['imdb_id'] ?? meta?['imdbId'] ?? meta?['imdbid'];
-    if (rawImdb is! String || !rawImdb.startsWith('tt')) return null;
+    if (imdb == null) {
+      final rawImdb = meta?['imdb_id'] ?? meta?['imdbId'] ?? meta?['imdbid'];
+      if (rawImdb is String && rawImdb.startsWith('tt')) imdb = rawImdb;
+    }
+    if (imdb == null) return null;
+    if (type != 'series') return (imdb, null, null);
     int? se, ep;
     for (final v in (meta?['videos'] as List? ?? [])) {
       if (v is Map && v['id'] == videoId) {
@@ -166,14 +170,15 @@ class Trakt {
       }
     }
     ep ??= int.tryParse(p.last);
-    if (type == 'series') se ??= 1;
-    return (rawImdb, se, ep);
+    se ??= 1;
+    if (ep == null) return null;
+    return (imdb, se, ep);
   }
 
   /// Movies: videoId "tt0111161". Episodes: "tt0944947:3:9".
   static Map<String, dynamic> _scrobbleBody(
-      String itemType, String videoId, double progressPct) {
-    final r = resolveVideo(itemType, videoId);
+      String itemType, String itemId, String videoId, double progressPct) {
+    final r = resolveVideo(itemType, itemId, videoId);
     if (r == null) return const {};
     if (itemType == 'series' && r.$2 != null && r.$3 != null) {
       return {
@@ -190,9 +195,9 @@ class Trakt {
 
   /// action: start | pause | stop. Fire-and-forget safe: throws only strings.
   static Future<void> scrobble(
-      String action, String itemType, String videoId, double pct) async {
+      String action, String itemType, String itemId, String videoId, double pct) async {
     if (!connected) return;
-    final body = _scrobbleBody(itemType, videoId, pct);
+    final body = _scrobbleBody(itemType, itemId, videoId, pct);
     if (body.isEmpty) return; // id has no imdb mapping (rare anime sources)
     final c = client()!;
     await http.post(Uri.parse('$_api/scrobble/$action'),
@@ -224,8 +229,8 @@ class Trakt {
         ]
       };
 
-  static Map _historyBody(String type, String videoId) {
-    final r = resolveVideo(type, videoId);
+  static Map _historyBody(String type, String itemId, String videoId) {
+    final r = resolveVideo(type, itemId, videoId);
     if (r == null) return const {};
     if (type == 'series' && r.$2 != null && r.$3 != null) {
       return {
@@ -375,8 +380,9 @@ class Trakt {
     return 'Removed $removed Trakt entries that are not in your library.';
   }
 
-  static void pushWatched(String type, String videoId, bool watched) {
-    final body = _historyBody(type, videoId);
+  static void pushWatched(
+      String type, String itemId, String videoId, bool watched) {
+    final body = _historyBody(type, itemId, videoId);
     if (body.isEmpty) return; // no imdb mapping
     _syncPost(watched ? 'history' : 'history/remove', body);
   }
@@ -420,7 +426,8 @@ class Trakt {
     for (final p in Db.progress.values.cast<Map>()) {
       if (p['watched'] != true) continue;
       final vid = p['videoId'] as String;
-      final r = resolveVideo(p['type'] as String? ?? 'movie', vid);
+      final r = resolveVideo(
+          p['type'] as String? ?? 'movie', p['itemId'] as String? ?? vid, vid);
       if (r == null) continue; // no imdb mapping
       if (p['type'] == 'series' && r.$2 != null && r.$3 != null) {
         showMap

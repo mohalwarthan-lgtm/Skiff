@@ -543,7 +543,7 @@ class _EpisodeTile extends StatelessWidget {
           tooltip: watched ? 'Watched — click to unmark' : 'Mark watched',
           onPressed: () {
             Db.markWatched(type, itemId, vid, !watched);
-            Trakt.pushWatched(type, vid, !watched);
+            Trakt.pushWatched(type, itemId, vid, !watched);
             onChanged();
           },
         ),

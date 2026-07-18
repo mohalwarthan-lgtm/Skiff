@@ -103,7 +103,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _onEngineError('$e');
       return;
     }
-    Trakt.scrobble('start', widget.type, widget.videoId, 0).catchError((_) {});
+    Trakt.scrobble('start', widget.type, widget.itemId, widget.videoId, 0)
+        .catchError((_) {});
 
     player.stream.duration.listen((d) {
       if (!resumed && d.inSeconds > 0) {
@@ -132,8 +133,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
 
     player.stream.playing.listen((playing) {
-      Trakt.scrobble(
-              playing ? 'start' : 'pause', widget.type, widget.videoId, _pct())
+      Trakt.scrobble(playing ? 'start' : 'pause', widget.type, widget.itemId,
+              widget.videoId, _pct())
           .catchError((_) {});
     });
 
@@ -153,7 +154,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (pos > 0) {
       Db.setProgress(widget.type, widget.itemId, widget.videoId, pos, dur);
     }
-    Trakt.scrobble('stop', widget.type, widget.videoId, _pct())
+    Trakt.scrobble('stop', widget.type, widget.itemId, widget.videoId, _pct())
         .catchError((_) {});
     saveTimer?.cancel();
     hideTimer?.cancel();
