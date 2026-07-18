@@ -506,19 +506,23 @@ class Trakt {
       if (res.statusCode < 300) {
         for (final e in (jsonDecode(res.body) as List)) {
           final pct = (e['progress'] as num?)?.toDouble() ?? 0;
-          if (pct < 2 || pct > 98) continue;
+          if (pct <= 0 || pct >= 97) continue;
+          final pausedAt = DateTime.tryParse('${e['paused_at'] ?? ''}');
+          final at = pausedAt == null
+              ? null
+              : pausedAt.millisecondsSinceEpoch ~/ 1000;
           if (e['movie'] != null) {
             final imdb = e['movie']?['ids']?['imdb'];
             if (imdb == null) continue;
             final t = _localTarget('movie', imdb, null, null);
-            Db.mergePct('movie', t.$1, t.$2, pct);
+            Db.mergePct('movie', t.$1, t.$2, pct, at: at);
           } else if (e['show'] != null && e['episode'] != null) {
             final imdb = e['show']?['ids']?['imdb'];
             if (imdb == null) continue;
             final se = (e['episode']?['season'] as num?)?.toInt();
             final ep = (e['episode']?['number'] as num?)?.toInt();
             final t = _localTarget('series', imdb, se, ep);
-            Db.mergePct('series', t.$1, t.$2, pct);
+            Db.mergePct('series', t.$1, t.$2, pct, at: at);
           }
         }
       }

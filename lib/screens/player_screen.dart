@@ -114,7 +114,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (p?['watched'] != true) {
           if (pos > 30 && pos < d.inSeconds - 30) {
             player.seek(Duration(seconds: pos.toInt()));
-          } else if (pct > 2 && pct < 98) {
+          } else if (pct > 1 && pct < 98) {
             // Position synced from Trakt (watched elsewhere).
             player.seek(
                 Duration(seconds: (d.inSeconds * pct / 100).round()));

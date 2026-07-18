@@ -135,17 +135,28 @@ class Db {
   /// Merge a Trakt playback percentage (watched elsewhere; no absolute
   /// seconds known). The player resumes from it and Continue Watching
   /// shows it; real local playback overwrites it with exact seconds.
-  static void mergePct(String type, String itemId, String videoId, double pct) {
+  static void mergePct(String type, String itemId, String videoId, double pct,
+      {int? at}) {
     final prev = prog(type, itemId, videoId);
     if (prev?['watched'] == true) return;
-    progress.put(progKey(type, itemId, videoId), {
+    final stamp = at ?? now();
+    final prevAt = (prev?['updatedAt'] ?? 0) as num;
+    // Whoever watched most recently is the authority. If the local row is
+    // newer than Trakt's paused_at, keep the local position untouched.
+    if (stamp < prevAt) return;
+    final merged = <dynamic, dynamic>{
       ...?prev,
       'itemId': itemId,
       'type': type,
       'videoId': videoId,
       'pct': pct,
-      'updatedAt': now(),
-    });
+      'updatedAt': stamp,
+    }
+      // Drop stale local seconds so the fresher Trakt position wins; the
+      // next local playback writes exact seconds again with a newer stamp.
+      ..remove('position')
+      ..remove('duration');
+    progress.put(progKey(type, itemId, videoId), merged);
   }
 
   static void setProgress(
@@ -184,7 +195,9 @@ class Db {
   static List<Map> continueWatching({int limit = 20}) {
     final rows = progress.values
         .cast<Map>()
-        .where((p) => p['watched'] != true && (p['position'] ?? 0) > 60)
+        .where((p) =>
+            p['watched'] != true &&
+            ((p['position'] ?? 0) > 60 || ((p['pct'] ?? 0) as num) >= 1))
         .toList()
       ..sort((a, b) => (b['updatedAt'] ?? 0).compareTo(a['updatedAt'] ?? 0));
     return rows.take(limit).map((p) {
