@@ -69,6 +69,156 @@ class _DetailsScreenState extends State<DetailsScreen> {
     setState(() {});
   }
 
+  /// Batch-download the selected season: pick from the qualities actually
+  /// on offer; per episode the queue takes the top-ranked stream of that
+  /// quality - and since AIOStreams sorts cached links, language, and
+  /// sources per your setup, the top match is the best cached one.
+  Future<void> _downloadSeason() async {
+    final m = meta;
+    if (m == null || season == null) return;
+    final eps = (m['videos'] as List? ?? [])
+        .where((v) => v['season'] == season)
+        .toList()
+      ..sort((a, b) =>
+          ((a['episode'] ?? 0) as num).compareTo((b['episode'] ?? 0) as num));
+    if (eps.isEmpty) return;
+
+    String textOf(Map st) =>
+        '${st['name'] ?? ''} ${st['title'] ?? ''} ${st['description'] ?? ''}'
+            .toLowerCase();
+
+    // Sample the first episode to learn which qualities exist here.
+    setState(() => busy = 'Checking available qualities…');
+    var sample = <Map>[];
+    try {
+      final groups = await Addons.streamsFor(widget.type, eps.first['id']);
+      sample = [for (final g in groups) ...(g['streams'] as List)]
+          .whereType<Map>()
+          .toList();
+    } catch (_) {}
+    if (mounted) setState(() => busy = null);
+
+    const order = ['2160p', '4k', '1080p', '720p', '480p'];
+    final found = [
+      for (final q in order)
+        if (sample.any((st) => textOf(st).contains(q))) q
+    ];
+
+    var quality = Db.setting('batch_quality') ?? '';
+    if (!found.contains(quality)) {
+      quality = found.isNotEmpty ? found.first : 'any';
+    }
+    var skipWatched = true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setD) => AlertDialog(
+          title: Text('Download season $season'),
+          content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quality'),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, children: [
+                  for (final q in [...found, 'any'])
+                    ChoiceChip(
+                      label: Text(q == 'any'
+                          ? 'Top pick'
+                          : q == '4k'
+                              ? '4K'
+                              : q),
+                      selected: quality == q,
+                      onSelected: (_) => setD(() => quality = q),
+                    ),
+                ]),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Skip watched episodes'),
+                  value: skipWatched,
+                  onChanged: (v) => setD(() => skipWatched = v ?? true),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                    'Within the chosen quality the top stream wins — cached '
+                    'first, language and sources per your AIOStreams setup.',
+                    style: TextStyle(
+                        fontSize: 12, color: Theme.of(context).hintColor)),
+              ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Queue downloads')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    Db.setSetting('batch_quality', quality);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Queuing season $season — episodes download one by '
+              'one. Track them in the Downloads tab.')));
+    }
+
+    // Sequential background queue: one episode at a time.
+    () async {
+      for (final v in eps) {
+        final vid = v['id'] as String;
+        if (Downloads.isDownloaded(widget.type, widget.id, vid)) continue;
+        if (skipWatched && Db.isWatched(widget.type, widget.id, vid)) continue;
+        try {
+          final groups = await Addons.streamsFor(widget.type, vid);
+          final flat = [for (final g in groups) ...(g['streams'] as List)]
+              .whereType<Map>()
+              .toList();
+          Map? pick;
+          if (quality != 'any') {
+            for (final st in flat) {
+              if (st['url'] != null && textOf(st).contains(quality)) {
+                pick = st;
+                break;
+              }
+            }
+          }
+          if (pick == null) {
+            for (final st in flat) {
+              if (st['url'] != null) {
+                pick = st;
+                break;
+              }
+            }
+          }
+          if (pick == null) continue;
+          final hinted = pick['behaviorHints']?['proxyHeaders']?['request'];
+          final headers = hinted is Map
+              ? hinted.map((k, val) => MapEntry('$k', '$val'))
+              : <String, String>{};
+          final url = await Net.finalUrl(pick['url'], headers);
+          final subs = await Addons.subtitlesFor(widget.type, vid)
+              .catchError((_) => <Map>[]);
+          await Downloads.start(
+            type: widget.type,
+            itemId: widget.id,
+            videoId: vid,
+            url: url,
+            displayName: m['name'] ?? widget.id,
+            videoTitle:
+                'S${v['season']} E${v['episode']} · ${v['title'] ?? v['name'] ?? ''}',
+            poster: m['poster'],
+            headers: headers,
+            subs: subs,
+          );
+        } catch (_) {/* one bad episode should not stop the season */}
+      }
+    }();
+  }
+
   Future<void> _openStreams(String videoId, String videoTitle) async {
     // Make sure the item carries display info before any progress rows are
     // written, so Continue Watching never shows a bare tt-id.
@@ -204,6 +354,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ],
                 onChanged: (v) => setState(() => season = v),
               ),
+              const Spacer(),
+              TextButton.icon(
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: const Text('Download season'),
+                  onPressed: _downloadSeason),
             ]),
             const SizedBox(height: 6),
             for (final v in videos)

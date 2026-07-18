@@ -69,6 +69,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late double subOutline =
       double.tryParse(Db.setting('sub_outline') ?? '') ?? 2;
   late double subBg = double.tryParse(Db.setting('sub_bg') ?? '') ?? 0;
+  bool stylePreview = false; // style dialog open: always show a sample line
 
   @override
   void initState() {
@@ -394,33 +395,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } catch (_) {/* property API unavailable on this backend */}
   }
 
-  SubtitleViewConfiguration _subCfg() => SubtitleViewConfiguration(
-        style: TextStyle(
-          fontSize: subSize,
-          height: 1.35,
-          color: Colors.white,
-          fontWeight: FontWeight.w500,
-          backgroundColor: subBg <= 0
-              ? null
-              : Colors.black.withOpacity((subBg / 100).clamp(0.0, 1.0)),
-          shadows: subOutline <= 0
-              ? null
-              : [
-                  for (final o in const [
-                    Offset(-1, -1), Offset(1, -1),
-                    Offset(-1, 1), Offset(1, 1), Offset(0, 0)
-                  ])
-                    Shadow(
-                        offset: o * subOutline,
-                        blurRadius: subOutline,
-                        color: Colors.black),
-                ],
-        ),
-        padding: EdgeInsets.only(bottom: subBottom, left: 24, right: 24),
+  TextStyle get _subStyle => TextStyle(
+        fontSize: subSize,
+        height: 1.35,
+        color: Colors.white,
+        fontWeight: FontWeight.w500,
+        backgroundColor: subBg <= 0
+            ? null
+            : Colors.black.withOpacity((subBg / 100).clamp(0.0, 1.0)),
+        shadows: subOutline <= 0
+            ? null
+            : [
+                for (final o in const [
+                  Offset(-1, -1), Offset(1, -1),
+                  Offset(-1, 1), Offset(1, 1), Offset(0, 0)
+                ])
+                  Shadow(
+                      offset: o * subOutline,
+                      blurRadius: subOutline,
+                      color: Colors.black),
+              ],
       );
 
   Future<void> _subStyleDialog() async {
     var delay = 0.0;
+    setState(() => stylePreview = true);
     await showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
@@ -488,6 +487,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         },
       ),
     );
+    if (mounted) setState(() => stylePreview = false);
   }
 
   String _fmt(Duration d) {
@@ -515,7 +515,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : Video(
                         controller: controller!,
                         controls: NoVideoControls,
-                        subtitleViewConfiguration: _subCfg())),
+                        // We paint subtitles ourselves below - full control
+                        // over position and style on every platform.
+                        subtitleViewConfiguration:
+                            const SubtitleViewConfiguration(visible: false))),
             Center(
               child: StreamBuilder<bool>(
                 stream: player.stream.buffering,
@@ -523,6 +526,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ? const CircularProgressIndicator()
                     : const SizedBox.shrink(),
               ),
+            ),
+            // Our own subtitle overlay. Bottom-aligned padding (not stack
+            // positioning) so the Position slider always moves it; while the
+            // style dialog is open a preview line is shown even in silence.
+            StreamBuilder<List<String>>(
+              stream: player.stream.subtitle,
+              builder: (_, snap) {
+                var text = (snap.data ?? const <String>[])
+                    .where((l) => l.trim().isNotEmpty)
+                    .join('\n');
+                if (stylePreview && text.isEmpty) {
+                  text = 'Subtitle preview — drag the sliders';
+                }
+                if (text.isEmpty) return const SizedBox.shrink();
+                return IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                          left: 24, right: 24, bottom: subBottom),
+                      child: Text(text,
+                          textAlign: TextAlign.center, style: _subStyle),
+                    ),
+                  ),
+                );
+              },
             ),
             // Tap = pause/play, double tap = fullscreen
             Positioned.fill(
