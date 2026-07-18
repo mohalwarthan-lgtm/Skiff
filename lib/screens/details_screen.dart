@@ -172,7 +172,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                           label: const Text('Remove'),
                           onPressed: () {
                             Db.removeItem(widget.type, widget.id);
-                            Trakt.pushStatus(widget.type, widget.id, 'removed');
+                            Trakt.pushRemoval(widget.type, widget.id);
                             setState(() {});
                           },
                         ),

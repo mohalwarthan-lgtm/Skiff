@@ -60,6 +60,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double? scrubbing;
   final focusNode = FocusNode();
 
+  // Subtitle style - applied to media_kit's Flutter subtitle overlay (the
+  // thing actually painting the text; mpv properties do not affect it).
+  late double subSize =
+      double.tryParse(Db.setting('sub_size') ?? '') ?? 44;
+  late double subBottom =
+      double.tryParse(Db.setting('sub_bottom') ?? '') ?? 40;
+  late double subOutline =
+      double.tryParse(Db.setting('sub_outline') ?? '') ?? 2;
+  late double subBg = double.tryParse(Db.setting('sub_bg') ?? '') ?? 0;
+
   @override
   void initState() {
     super.initState();
@@ -88,7 +98,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _onEngineError('$e');
       return;
     }
-    _applySavedSubStyle();
     Trakt.scrobble('start', widget.type, widget.videoId, 0).catchError((_) {});
 
     player.stream.duration.listen((d) {
@@ -289,27 +298,59 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return out;
   }
 
+  static const _langNames = {
+    'en': 'English', 'eng': 'English',
+    'ar': 'Arabic', 'ara': 'Arabic',
+    'es': 'Spanish', 'spa': 'Spanish',
+    'fr': 'French', 'fre': 'French', 'fra': 'French',
+    'de': 'German', 'ger': 'German', 'deu': 'German',
+    'it': 'Italian', 'ita': 'Italian',
+    'pt': 'Portuguese', 'por': 'Portuguese', 'pob': 'Portuguese (BR)',
+    'ru': 'Russian', 'rus': 'Russian',
+    'ja': 'Japanese', 'jpn': 'Japanese',
+    'ko': 'Korean', 'kor': 'Korean',
+    'zh': 'Chinese', 'chi': 'Chinese', 'zho': 'Chinese',
+    'hi': 'Hindi', 'hin': 'Hindi',
+    'tr': 'Turkish', 'tur': 'Turkish',
+    'nl': 'Dutch', 'dut': 'Dutch', 'nld': 'Dutch',
+    'pl': 'Polish', 'pol': 'Polish',
+    'sv': 'Swedish', 'swe': 'Swedish',
+    'no': 'Norwegian', 'nor': 'Norwegian',
+    'da': 'Danish', 'dan': 'Danish',
+    'fi': 'Finnish', 'fin': 'Finnish',
+    'he': 'Hebrew', 'heb': 'Hebrew',
+    'ur': 'Urdu', 'urd': 'Urdu',
+  };
+
+  String _langName(String? code) {
+    if (code == null || code.isEmpty) return 'Unknown';
+    return _langNames[code.toLowerCase()] ?? code.toUpperCase();
+  }
+
   Future<void> _pickSubs() async {
     final embedded = player.state.tracks.subtitle
         .where((t) => t.id != 'auto' && t.id != 'no')
         .toList();
     final addon = _dedupedAddonSubs;
+
+    // Language + source only; number repeats ("English 2 (add-on)").
+    final counts = <String, int>{};
+    String label(String lang, String source) {
+      final base = _langName(lang);
+      final n = counts.update('$source|$base', (v) => v + 1,
+          ifAbsent: () => 1);
+      return n == 1 ? '$base ($source)' : '$base $n ($source)';
+    }
+
     final entries = <(String, String)>[
       ('off', 'Off'),
       for (final t in embedded)
-        ('e:${t.id}', _trackLabel(t, 'Embedded ${t.id}')),
+        ('e:${t.id}', label(t.language ?? '', 'embedded')),
       for (var i = 0; i < addon.length; i++)
-        (
-          'a:$i',
-          'Add-on ${i + 1} · '
-              '${(addon[i]['lang'] as String? ?? 'sub').toUpperCase()}'
-              '${addon[i]['id'] != null ? ' · ${addon[i]['id']}' : ''}'
-        ),
+        ('a:$i', label(addon[i]['lang'] as String? ?? '', 'add-on')),
       for (var i = 0; i < widget.localSubs.length; i++)
-        (
-          'l:$i',
-          'Downloaded · ${(widget.localSubs[i]['lang'] as String? ?? 'sub ${i + 1}').toUpperCase()}'
-        ),
+        ('l:$i',
+            label(widget.localSubs[i]['lang'] as String? ?? '', 'downloaded')),
     ];
     final picked = await _pickFromList('Subtitles', entries);
     if (picked == null) return;
@@ -319,13 +360,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final id = picked.substring(2);
       await player.setSubtitleTrack(embedded.firstWhere((t) => t.id == id));
     } else if (picked.startsWith('a:')) {
-      final s = addon[int.parse(picked.substring(2))];
-      await player
-          .setSubtitleTrack(SubtitleTrack.uri(s['url'], language: s['lang']));
-    } else if (picked.startsWith('l:')) {
-      final s = widget.localSubs[int.parse(picked.substring(2))];
+      final sub = addon[int.parse(picked.substring(2))];
       await player.setSubtitleTrack(
-          SubtitleTrack.uri('file:///${s['path']}', language: s['lang']));
+          SubtitleTrack.uri(sub['url'], language: sub['lang']));
+    } else if (picked.startsWith('l:')) {
+      final sub = widget.localSubs[int.parse(picked.substring(2))];
+      await player.setSubtitleTrack(
+          SubtitleTrack.uri('file:///${sub['path']}', language: sub['lang']));
     }
   }
 
@@ -353,129 +394,98 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } catch (_) {/* property API unavailable on this backend */}
   }
 
-  void _applySavedSubStyle() {
-    // Render subtitles as outlined text (like Stremio/mpv defaults) rather
-    // than text on an opaque box. 'back-color' alpha controls the box; we
-    // default it fully transparent and expose it as a slider.
-    _setMpv('sub-border-size', Db.setting('sub_border') ?? '3.0');
-    _setMpv('sub-border-color', '#000000');
-    _setMpv('sub-shadow-offset', '0.0');
-    _setMpv('sub-color', '#FFFFFF');
-    _setMpv('sub-back-color', _backColor(Db.setting('sub_bg_opacity') ?? '0'));
-    _setMpv('sub-scale', Db.setting('sub_scale') ?? '1.0');
-    _setMpv('sub-pos', Db.setting('sub_pos') ?? '100');
-  }
-
-  /// mpv wants ARGB hex; map a 0-100 opacity to the alpha byte.
-  String _backColor(String pct) {
-    final a = ((double.tryParse(pct) ?? 0) / 100 * 255).round().clamp(0, 255);
-    final hex = a.toRadixString(16).padLeft(2, '0').toUpperCase();
-    return '#${hex}000000';
-  }
+  SubtitleViewConfiguration _subCfg() => SubtitleViewConfiguration(
+        style: TextStyle(
+          fontSize: subSize,
+          height: 1.35,
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+          backgroundColor: subBg <= 0
+              ? null
+              : Colors.black.withOpacity((subBg / 100).clamp(0.0, 1.0)),
+          shadows: subOutline <= 0
+              ? null
+              : [
+                  for (final o in const [
+                    Offset(-1, -1), Offset(1, -1),
+                    Offset(-1, 1), Offset(1, 1), Offset(0, 0)
+                  ])
+                    Shadow(
+                        offset: o * subOutline,
+                        blurRadius: subOutline,
+                        color: Colors.black),
+                ],
+        ),
+        padding: EdgeInsets.only(bottom: subBottom, left: 24, right: 24),
+      );
 
   Future<void> _subStyleDialog() async {
-    var scale = double.tryParse(Db.setting('sub_scale') ?? '') ?? 1.0;
-    var pos = double.tryParse(Db.setting('sub_pos') ?? '') ?? 100.0;
-    var border = double.tryParse(Db.setting('sub_border') ?? '') ?? 3.0;
-    var bg = double.tryParse(Db.setting('sub_bg_opacity') ?? '') ?? 0.0;
     var delay = 0.0;
     await showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
-        builder: (context, setD) => AlertDialog(
-          title: const Text('Subtitle style'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
-              const SizedBox(width: 70, child: Text('Size')),
+        builder: (context, setD) {
+          Widget row(String label, double value, double min, double max,
+              int divisions, String key, void Function(double) assign,
+              {String Function(double)? fmt}) {
+            return Row(children: [
+              SizedBox(width: 70, child: Text(label)),
               Expanded(
                 child: Slider(
-                  value: scale,
-                  min: 0.5,
-                  max: 2.0,
-                  divisions: 30,
-                  label: '${(scale * 100).round()}%',
+                  value: value,
+                  min: min,
+                  max: max,
+                  divisions: divisions,
+                  label: fmt != null ? fmt(value) : value.round().toString(),
                   onChanged: (v) {
-                    setD(() => scale = v);
-                    _setMpv('sub-scale', v.toStringAsFixed(2));
-                    Db.setSetting('sub_scale', v.toStringAsFixed(2));
+                    assign(v);
+                    Db.setSetting(key, v.toStringAsFixed(1));
+                    setD(() {});
+                    setState(() {}); // live-preview on the video
                   },
                 ),
               ),
+            ]);
+          }
+
+          return AlertDialog(
+            title: const Text('Subtitle style'),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              row('Size', subSize, 20, 80, 30, 'sub_size',
+                  (v) => subSize = v),
+              row('Height', subBottom, 0, 220, 44, 'sub_bottom',
+                  (v) => subBottom = v),
+              row('Outline', subOutline, 0, 5, 10, 'sub_outline',
+                  (v) => subOutline = v,
+                  fmt: (v) => v.toStringAsFixed(1)),
+              row('Box', subBg, 0, 100, 20, 'sub_bg', (v) => subBg = v,
+                  fmt: (v) => v.round().toString() + '%'),
+              Row(children: [
+                const SizedBox(width: 70, child: Text('Delay')),
+                IconButton(
+                    icon: const Icon(Icons.remove),
+                    onPressed: () {
+                      delay -= 0.5;
+                      _setMpv('sub-delay', delay.toStringAsFixed(1));
+                      setD(() {});
+                    }),
+                Text(delay.toStringAsFixed(1) + 's'),
+                IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () {
+                      delay += 0.5;
+                      _setMpv('sub-delay', delay.toStringAsFixed(1));
+                      setD(() {});
+                    }),
+              ]),
             ]),
-            Row(children: [
-              const SizedBox(width: 70, child: Text('Height')),
-              Expanded(
-                child: Slider(
-                  value: pos,
-                  min: 30,
-                  max: 100,
-                  divisions: 70,
-                  label: pos.round().toString(),
-                  onChanged: (v) {
-                    setD(() => pos = v);
-                    _setMpv('sub-pos', v.round().toString());
-                    Db.setSetting('sub_pos', v.round().toString());
-                  },
-                ),
-              ),
-            ]),
-            Row(children: [
-              const SizedBox(width: 70, child: Text('Border')),
-              Expanded(
-                child: Slider(
-                  value: border,
-                  min: 0,
-                  max: 6,
-                  divisions: 12,
-                  label: border.toStringAsFixed(1),
-                  onChanged: (v) {
-                    setD(() => border = v);
-                    _setMpv('sub-border-size', v.toStringAsFixed(1));
-                    Db.setSetting('sub_border', v.toStringAsFixed(1));
-                  },
-                ),
-              ),
-            ]),
-            Row(children: [
-              const SizedBox(width: 70, child: Text('Box')),
-              Expanded(
-                child: Slider(
-                  value: bg,
-                  min: 0,
-                  max: 100,
-                  divisions: 20,
-                  label: '${bg.round()}%',
-                  onChanged: (v) {
-                    setD(() => bg = v);
-                    _setMpv('sub-back-color', _backColor(v.round().toString()));
-                    Db.setSetting('sub_bg_opacity', v.round().toString());
-                  },
-                ),
-              ),
-            ]),
-            Row(children: [
-              const SizedBox(width: 70, child: Text('Delay')),
-              IconButton(
-                  icon: const Icon(Icons.remove),
-                  onPressed: () {
-                    setD(() => delay -= 0.5);
-                    _setMpv('sub-delay', delay.toStringAsFixed(1));
-                  }),
-              Text('${delay.toStringAsFixed(1)}s'),
-              IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () {
-                    setD(() => delay += 0.5);
-                    _setMpv('sub-delay', delay.toStringAsFixed(1));
-                  }),
-            ]),
-          ]),
-          actions: [
-            FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Done')),
-          ],
-        ),
+            actions: [
+              FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done')),
+            ],
+          );
+        },
       ),
     );
   }
@@ -502,7 +512,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Center(
                 child: controller == null
                     ? const CircularProgressIndicator()
-                    : Video(controller: controller!, controls: NoVideoControls)),
+                    : Video(
+                        controller: controller!,
+                        controls: NoVideoControls,
+                        subtitleViewConfiguration: _subCfg())),
             Center(
               child: StreamBuilder<bool>(
                 stream: player.stream.buffering,

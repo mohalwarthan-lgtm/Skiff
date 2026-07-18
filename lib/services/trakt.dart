@@ -208,6 +208,13 @@ class Trakt {
     }
   }
 
+  /// Removing a title locally removes it from Trakt too - watchlist AND
+  /// watch history - so the next pull cannot resurrect it.
+  static void pushRemoval(String type, String id) {
+    _syncPost('watchlist/remove', _watchlistBody(type, id));
+    _syncPost('history/remove', _watchlistBody(type, id));
+  }
+
   static void pushWatched(String type, String videoId, bool watched) {
     _syncPost(watched ? 'history' : 'history/remove', _historyBody(type, videoId));
   }

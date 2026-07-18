@@ -44,10 +44,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           ListTile(
             leading: const Icon(Icons.delete_outline),
-            title: const Text('Remove from library'),
+            title: const Text('Remove from library & Trakt'),
             onTap: () {
               Db.removeItem(it['type'], it['id']);
-              Trakt.pushStatus(it['type'], it['id'], 'removed');
+              Trakt.pushRemoval(it['type'], it['id']);
               Navigator.pop(context);
               setState(() {});
             },
