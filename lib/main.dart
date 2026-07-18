@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
@@ -12,15 +10,6 @@ import 'screens/settings_screen.dart';
 import 'services/db.dart';
 import 'services/trakt.dart';
 
-String? _fullMpvPath() {
-  if (!Platform.isWindows) return null;
-  // Respect an explicit opt-out saved in settings.
-  if (Db.setting('use_full_engine') == 'false') return null;
-  final exeDir = File(Platform.resolvedExecutable).parent.path;
-  final dll = File(exeDir + r'\full_mpv\libmpv-2.dll');
-  return dll.existsSync() ? dll.path : null;
-}
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized(); // window control (fullscreen etc.)
@@ -28,7 +17,12 @@ Future<void> main() async {
   // support: TrueHD, DTS variants, everything). If the folder is missing,
   // media_kit silently uses its own bundled engine instead.
   await Db.init();
-  MediaKit.ensureInitialized(libmpv: _fullMpvPath());
+  // One engine, loaded once, shared by the Dart side and the native texture
+  // plugins alike. The cloud build replaces the DLL next to skiff.exe with a
+  // full-codec build, so ALL components use the same upgraded engine -
+  // loading a second copy via the libmpv: parameter is what caused the
+  // native crashes (handles from one engine passed into the other).
+  MediaKit.ensureInitialized();
   runApp(const SkiffApp());
 
   // Hands-off Trakt: pull on launch, then every 30 minutes.
