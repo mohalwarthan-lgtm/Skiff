@@ -31,6 +31,8 @@ class Db {
       'name': m['name'],
       'poster': m['poster'],
       'imdb_id': m['imdb_id'] ?? m['imdbId'],
+      'logo': m['logo'],
+      'cast': m['cast'],
       'background': m['background'],
       'description': m['description'],
       'year': m['year'],

@@ -586,14 +586,20 @@ class Trakt {
     for (final e in shows) {
       final imdb = e['show']?['ids']?['imdb'];
       if (imdb == null) continue;
-      // Don't clobber an explicit local shelf choice.
-      if (Db.itemStatus('series', imdb) == null) {
-        Db.setStatus('series', imdb, 'watching', name: e['show']?['title']);
+      // Map onto the item the app actually uses (kitsu ids, local
+      // numbering) so episode ticks show up in the UI.
+      final probe = await _localTarget('series', imdb, null, null);
+      final localId = probe.$1;
+      if (Db.itemStatus('series', localId) == null) {
+        Db.setStatus('series', localId, 'watching',
+            name: e['show']?['title']);
       }
       for (final season in (e['seasons'] as List? ?? [])) {
+        final seNum = (season['number'] as num?)?.toInt();
         for (final ep in (season['episodes'] as List? ?? [])) {
-          Db.markWatched('series', imdb,
-              '$imdb:${season['number']}:${ep['number']}', true);
+          final t = await _localTarget(
+              'series', imdb, seNum, (ep['number'] as num?)?.toInt());
+          Db.markWatched('series', t.$1, t.$2, true);
         }
       }
       nS++;

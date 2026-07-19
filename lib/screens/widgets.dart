@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class PosterCard extends StatelessWidget {
+class PosterCard extends StatefulWidget {
   final String? poster;
   final String title;
   final String? subtitle;
@@ -17,9 +17,47 @@ class PosterCard extends StatelessWidget {
   });
 
   @override
+  State<PosterCard> createState() => _PosterCardState();
+}
+
+class _PosterCardState extends State<PosterCard> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        transformAlignment: Alignment.center,
+        transform: _hover
+            ? (Matrix4.identity()
+              ..setEntry(3, 2, 0.0016)
+              ..rotateX(-0.035)
+              ..rotateY(0.045)
+              ..scale(1.035))
+            : Matrix4.identity(),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: _hover
+              ? const [
+                  BoxShadow(
+                      color: Color(0x4D35D6E8),
+                      blurRadius: 18,
+                      spreadRadius: 1)
+                ]
+              : const [],
+        ),
+        child: _card(context),
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       borderRadius: BorderRadius.circular(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -30,8 +68,8 @@ class PosterCard extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 color: Theme.of(context).cardColor,
-                child: poster != null
-                    ? Image.network(poster!,
+                child: widget.poster != null
+                    ? Image.network(widget.poster!,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) =>
                             const Icon(Icons.movie_outlined, size: 40))
@@ -39,19 +77,19 @@ class PosterCard extends StatelessWidget {
               ),
             ),
           ),
-          if (progress != null && progress! > 0)
+          if (widget.progress != null && widget.progress! > 0)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: LinearProgressIndicator(
-                  value: progress!.clamp(0, 1), minHeight: 3),
+                  value: widget.progress!.clamp(0, 1), minHeight: 3),
             ),
           const SizedBox(height: 6),
-          Text(title,
+          Text(widget.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 13)),
-          if (subtitle != null)
-            Text(subtitle!,
+          if (widget.subtitle != null)
+            Text(widget.subtitle!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

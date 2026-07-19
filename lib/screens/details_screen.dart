@@ -147,6 +147,22 @@ class _DetailsScreenState extends State<DetailsScreen> {
     selected.clear();
   }
 
+  void _markSelected(bool watched) {
+    for (final vid in selected) {
+      Db.markWatched(widget.type, widget.id, vid, watched);
+      Trakt.pushWatched(widget.type, widget.id, vid, watched);
+    }
+    setState(() {
+      selecting = false;
+      selected.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(watched
+            ? 'Marked as watched.'
+            : 'Marked as unwatched.'),
+        duration: const Duration(seconds: 2)));
+  }
+
   Future<void> _batchDownload(List eps) async {
     final m = meta;
     if (m == null || eps.isEmpty) return;
@@ -335,12 +351,32 @@ class _DetailsScreenState extends State<DetailsScreen> {
       m['year'],
       m['runtime'],
       if (m['imdbRating'] != null) 'IMDb ${m['imdbRating']}',
-      (m['genres'] as List?)?.join(' · '),
     ].whereType<String>().join('  ·  ');
 
+    final bg = m['background'] ?? m['poster'];
     return Scaffold(
-      appBar: AppBar(title: Text(m['name'] ?? widget.id)),
-      body: ListView(
+      appBar: AppBar(
+          title: Text(m['name'] ?? widget.id),
+          backgroundColor: Colors.transparent),
+      extendBodyBehindAppBar: true,
+      body: Stack(fit: StackFit.expand, children: [
+        if (bg != null)
+          Image.network(bg,
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              errorBuilder: (_, __, ___) => const SizedBox()),
+        const DecoratedBox(
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.45, 1.0],
+                    colors: [
+              Color(0xB30A1522),
+              Color(0xE60A1522),
+              Color(0xFF0A1522)
+            ]))),
+        ListView(
         padding: const EdgeInsets.all(18),
         children: [
           if (offline)
@@ -371,13 +407,53 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (m['logo'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Image.network(m['logo'],
+                              height: 54,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) =>
+                                  const SizedBox()),
+                        ),
+                      ),
                     Text(m['name'] ?? '',
                         style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 4),
                     Text(metaLine, style: TextStyle(color: Theme.of(context).hintColor)),
                     const SizedBox(height: 10),
+                    if ((m['genres'] as List?)?.isNotEmpty == true)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Wrap(spacing: 6, runSpacing: 6, children: [
+                          for (final g in (m['genres'] as List).take(6))
+                            Chip(
+                                label: Text('$g',
+                                    style: const TextStyle(fontSize: 12)),
+                                visualDensity: VisualDensity.compact,
+                                backgroundColor: const Color(0x14FFFFFF),
+                                side: const BorderSide(
+                                    color: Color(0x22FFFFFF))),
+                        ]),
+                      ),
                     if (m['description'] != null) Text(m['description']),
+                    if ((m['cast'] as List?)?.isNotEmpty == true)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Wrap(spacing: 6, runSpacing: 6, children: [
+                          for (final c in (m['cast'] as List).take(10))
+                            Chip(
+                                label: Text('$c',
+                                    style: const TextStyle(fontSize: 11)),
+                                visualDensity: VisualDensity.compact,
+                                backgroundColor: const Color(0x0DFFFFFF),
+                                side: const BorderSide(
+                                    color: Color(0x1AFFFFFF))),
+                        ]),
+                      ),
                     _relatedLinks(m),
                     const SizedBox(height: 14),
                     Wrap(spacing: 8, runSpacing: 8, children: [
@@ -428,20 +504,38 @@ class _DetailsScreenState extends State<DetailsScreen> {
               if (!selecting) ...[
                 IconButton(
                     icon: const Icon(Icons.checklist, size: 20),
-                    tooltip: 'Select episodes to download',
+                    tooltip: 'Select episodes',
                     onPressed: () => setState(() => selecting = true)),
                 TextButton.icon(
                     icon: const Icon(Icons.download_outlined, size: 18),
                     label: const Text('Download season'),
                     onPressed: _downloadSeason),
               ] else ...[
-                Text('${selected.length} selected',
+                TextButton(
+                    onPressed: () => setState(() => selected
+                      ..clear()
+                      ..addAll([for (final v in videos) v['id'] as String])),
+                    child: const Text('All')),
+                TextButton(
+                    onPressed: () => setState(() => selected.clear()),
+                    child: const Text('None')),
+                Text('${selected.length}',
                     style: TextStyle(
                         color: Theme.of(context).hintColor, fontSize: 12)),
-                const SizedBox(width: 8),
-                FilledButton.tonal(
-                    onPressed: selected.isEmpty ? null : _downloadSelected,
-                    child: Text('Download (${selected.length})')),
+                IconButton(
+                    icon: const Icon(Icons.download_outlined, size: 20),
+                    tooltip: 'Download selected',
+                    onPressed: selected.isEmpty ? null : _downloadSelected),
+                IconButton(
+                    icon: const Icon(Icons.check_circle_outline, size: 20),
+                    tooltip: 'Mark selected watched',
+                    onPressed:
+                        selected.isEmpty ? null : () => _markSelected(true)),
+                IconButton(
+                    icon: const Icon(Icons.remove_done, size: 20),
+                    tooltip: 'Mark selected unwatched',
+                    onPressed:
+                        selected.isEmpty ? null : () => _markSelected(false)),
                 TextButton(
                     onPressed: () => setState(() {
                           selecting = false;
@@ -475,7 +569,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
               ),
           ],
         ],
-      ),
+        ),
+      ]),
     );
   }
 }
