@@ -534,7 +534,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
               Color(0xE60A1522),
               Color(0xFF0A1522)
             ]))),
-        ListView(
+        Material(
+          type: MaterialType.transparency,
+          child: ListView(
         padding: const EdgeInsets.all(18),
         children: [
           if (offline)
@@ -727,6 +729,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
               ),
           ],
         ],
+          ),
         ),
       ]),
     );
