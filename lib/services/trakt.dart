@@ -614,7 +614,7 @@ class Trakt {
         // the last sync - keeps large libraries cheap.
         final fingerprint =
             '${e['last_watched_at'] ?? ''}|${e['plays'] ?? ''}';
-        final ckey = 'traktprog3|' + imdb;
+        final ckey = 'traktprog4|' + imdb;
         if (Db.meta.get(ckey) == fingerprint) {
           nS++;
           continue;
@@ -643,11 +643,15 @@ class Trakt {
           final st = Db.itemStatus('series', localId);
           final showStatus = '${e['show']?['status'] ?? ''}';
           final ended = showStatus == 'ended' || showStatus == 'canceled';
+          // Nothing scheduled to watch next = finished, even if the
+          // network calls the show "returning".
+          final finished =
+              ended || (prog['data'] as Map?)?['next_episode'] == null;
           if (airedN > 0 && doneN >= airedN) {
-            if (ended && (st == null || st == 'watching')) {
+            if (finished && (st == null || st == 'watching')) {
               Db.setStatus('series', localId, 'completed',
                   name: e['show']?['title']);
-            } else if (!ended && st == 'completed') {
+            } else if (!finished && st == 'completed') {
               // Caught up on an airing show = Watching, not Completed.
               Db.setStatus('series', localId, 'watching',
                   name: e['show']?['title']);
