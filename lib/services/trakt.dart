@@ -581,7 +581,7 @@ class Trakt {
     syncStatus.value = 'Syncing…';
     await ensureFresh();
     final movies = (await _get('/sync/watched/movies'))['data'] as List;
-    final shows = (await _get('/sync/watched/shows'))['data'] as List;
+    final shows = (await _get('/sync/watched/shows?extended=full'))['data'] as List;
     final watchlist = (await _get('/sync/watchlist'))['data'] as List;
 
     var nM = 0, nS = 0, nW = 0;
@@ -614,7 +614,7 @@ class Trakt {
         // the last sync - keeps large libraries cheap.
         final fingerprint =
             '${e['last_watched_at'] ?? ''}|${e['plays'] ?? ''}';
-        final ckey = 'traktprog2|' + imdb;
+        final ckey = 'traktprog3|' + imdb;
         if (Db.meta.get(ckey) == fingerprint) {
           nS++;
           continue;
@@ -641,11 +641,17 @@ class Trakt {
           final doneN =
               ((prog['data'] as Map?)?['completed'] as num?)?.toInt() ?? 0;
           final st = Db.itemStatus('series', localId);
-          if (airedN > 0 &&
-              doneN >= airedN &&
-              (st == null || st == 'watching')) {
-            Db.setStatus('series', localId, 'completed',
-                name: e['show']?['title']);
+          final showStatus = '${e['show']?['status'] ?? ''}';
+          final ended = showStatus == 'ended' || showStatus == 'canceled';
+          if (airedN > 0 && doneN >= airedN) {
+            if (ended && (st == null || st == 'watching')) {
+              Db.setStatus('series', localId, 'completed',
+                  name: e['show']?['title']);
+            } else if (!ended && st == 'completed') {
+              // Caught up on an airing show = Watching, not Completed.
+              Db.setStatus('series', localId, 'watching',
+                  name: e['show']?['title']);
+            }
           }
           await Db.meta.put(ckey, fingerprint);
           nS++;
