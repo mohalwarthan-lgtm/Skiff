@@ -356,8 +356,16 @@ class _DetailsScreenState extends State<DetailsScreen> {
     final bg = m['background'] ?? m['poster'];
     return Scaffold(
       appBar: AppBar(
-          title: Text(m['name'] ?? widget.id),
-          backgroundColor: Colors.transparent),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.all(6),
+          child: CircleAvatar(
+            backgroundColor: const Color(0xCC0A1522),
+            child: BackButton(color: Colors.white.withOpacity(0.95)),
+          ),
+        ),
+      ),
       extendBodyBehindAppBar: true,
       body: Stack(fit: StackFit.expand, children: [
         if (bg != null)

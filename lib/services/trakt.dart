@@ -213,6 +213,7 @@ class Trakt {
   /// the row the app actually uses. Falls back to imdb-keyed ids.
   static Future<(String, String)> _localTarget(
       String type, String imdb, int? season, int? episode) async {
+    (String, String)? viaImdbItem;
     for (final it in Db.items.values.cast<Map>()) {
       if (it['type'] != type) continue;
       final itemId = it['id'] as String;
@@ -220,15 +221,23 @@ class Trakt {
       final meta = Db.cachedMeta(type, itemId);
       itImdb ??= (meta?['imdb_id'] ?? meta?['imdbId']) as String?;
       if (itImdb != imdb) continue;
-      if (type == 'movie') return (itemId, itemId);
-      if (season != null && episode != null) {
-        // Direct or numbering-translated match onto a real local episode.
+      (String, String) result;
+      if (type == 'movie') {
+        result = (itemId, itemId);
+      } else if (season != null && episode != null) {
         final hit = await fromTraktNumbering(
             imdb, type, itemId, season, episode);
-        if (hit != null) return (itemId, hit.$3);
+        result =
+            hit != null ? (itemId, hit.$3) : (itemId, '$itemId:$season:$episode');
+      } else {
+        result = (itemId, '$itemId:$season:$episode');
       }
-      return (itemId, '$itemId:$season:$episode');
+      // Prefer the add-on-keyed item; an imdb-keyed duplicate left over
+      // from older syncs must not shadow the item the UI actually shows.
+      if (itemId != imdb) return result;
+      viaImdbItem = result;
     }
+    if (viaImdbItem != null) return viaImdbItem;
     return type == 'movie'
         ? (imdb, imdb)
         : (imdb, '$imdb:$season:$episode');
@@ -590,6 +599,8 @@ class Trakt {
       // numbering) so episode ticks show up in the UI.
       final probe = await _localTarget('series', imdb, null, null);
       final localId = probe.$1;
+      // Remove the ghost imdb-keyed duplicate created by older versions.
+      if (localId != imdb) Db.items.delete('series|' + imdb);
       if (Db.itemStatus('series', localId) == null) {
         Db.setStatus('series', localId, 'watching',
             name: e['show']?['title']);

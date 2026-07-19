@@ -28,30 +28,7 @@ class _PosterCardState extends State<PosterCard> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        transformAlignment: Alignment.center,
-        transform: _hover
-            ? (Matrix4.identity()
-              ..setEntry(3, 2, 0.0016)
-              ..rotateX(-0.035)
-              ..rotateY(0.045)
-              ..scale(1.035))
-            : Matrix4.identity(),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: _hover
-              ? const [
-                  BoxShadow(
-                      color: Color(0x4D35D6E8),
-                      blurRadius: 18,
-                      spreadRadius: 1)
-                ]
-              : const [],
-        ),
-        child: _card(context),
-      ),
+      child: _card(context),
     );
   }
 
@@ -63,17 +40,42 @@ class _PosterCardState extends State<PosterCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: double.infinity,
-                color: Theme.of(context).cardColor,
-                child: widget.poster != null
-                    ? Image.network(widget.poster!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.movie_outlined, size: 40))
-                    : const Icon(Icons.movie_outlined, size: 40),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    width: 1.4,
+                    color: _hover
+                        ? const Color(0x8C35D6E8)
+                        : Colors.transparent),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  transformAlignment: Alignment.center,
+                  // Zoom-tilt INSIDE the clip: nothing can overflow the
+                  // grid cell, so no cropped shadows or titles.
+                  transform: _hover
+                      ? (Matrix4.identity()
+                        ..setEntry(3, 2, 0.0015)
+                        ..rotateX(-0.03)
+                        ..rotateY(0.04)
+                        ..scale(1.07))
+                      : Matrix4.identity(),
+                  child: Container(
+                    width: double.infinity,
+                    color: Theme.of(context).cardColor,
+                    child: widget.poster != null
+                        ? Image.network(widget.poster!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const Icon(Icons.movie_outlined, size: 40))
+                        : const Icon(Icons.movie_outlined, size: 40),
+                  ),
+                ),
               ),
             ),
           ),
