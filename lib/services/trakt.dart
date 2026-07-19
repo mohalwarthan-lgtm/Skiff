@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import 'db.dart';
 
@@ -43,83 +41,6 @@ class Trakt {
       };
 
   // ---------- Device auth ----------
-
-  /// One-click connect: open trakt.tv in the browser, the user logs in
-  /// and hits Authorize, and we catch the approval on a loopback listener.
-  /// No code typing. The device-code flow below remains as the fallback
-  /// for TVs and browserless environments.
-  static const _redirectPort = 48515;
-  static String get _redirectUri =>
-      'http://127.0.0.1:$_redirectPort/callback';
-
-  static Future<void> browserAuth() async {
-    final c = client();
-    if (c == null) throw 'This build has no Trakt app credentials.';
-    final HttpServer server;
-    try {
-      server = await HttpServer.bind(
-          InternetAddress.loopbackIPv4, _redirectPort);
-    } catch (_) {
-      throw 'Local port $_redirectPort is busy — use "Connect with a code" '
-          'instead.';
-    }
-    try {
-      final authUrl = Uri.parse('https://trakt.tv/oauth/authorize'
-          '?response_type=code'
-          '&client_id=${c.$1}'
-          '&redirect_uri=${Uri.encodeComponent(_redirectUri)}');
-      if (!await launchUrl(authUrl,
-          mode: LaunchMode.externalApplication)) {
-        throw 'Could not open a browser — use "Connect with a code" instead.';
-      }
-      // Wait for the redirect (ignore favicon and other stray requests).
-      final req = await () async {
-        await for (final r in server) {
-          if (r.uri.path == '/callback') return r;
-          r.response.statusCode = 404;
-          await r.response.close();
-        }
-        throw 'Authorization window closed.';
-      }()
-          .timeout(const Duration(minutes: 5),
-              onTimeout: () =>
-                  throw 'Timed out waiting for authorization in the browser.');
-      final code = req.uri.queryParameters['code'];
-      final err = req.uri.queryParameters['error'];
-      req.response.headers.contentType = ContentType.html;
-      req.response.write(code != null
-          ? '<html><body style="font-family:sans-serif;background:#0A1522;'
-              'color:#fff;display:flex;align-items:center;'
-              'justify-content:center;height:100vh"><div '
-              'style="text-align:center"><h2>SkiffBox is connected to '
-              'Trakt.</h2><p>You can close this tab and return to the '
-              'app.</p></div></body></html>'
-          : '<html><body style="font-family:sans-serif">Authorization was '
-              'not completed. You can close this tab.</body></html>');
-      await req.response.close();
-      if (code == null) {
-        throw err == 'access_denied'
-            ? 'Authorization was denied on Trakt.'
-            : 'Trakt did not return a code (${err ?? 'unknown'}).';
-      }
-      final res = await http.post(Uri.parse('$_api/oauth/token'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'code': code,
-            'client_id': c.$1,
-            'client_secret': c.$2,
-            'redirect_uri': _redirectUri,
-            'grant_type': 'authorization_code',
-          }));
-      if (res.statusCode >= 300) {
-        throw 'Trakt token exchange failed (HTTP ${res.statusCode}). Is '
-            'the redirect URI $_redirectUri registered on your Trakt app?';
-      }
-      _saveTokens(jsonDecode(res.body));
-    } finally {
-      await server.close(force: true);
-    }
-  }
 
   static Future<Map<String, dynamic>> deviceCode() async {
     final c = client();

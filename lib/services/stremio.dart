@@ -1,12 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// Minimal Stremio account client: log in once, read the account's add-on
-/// collection, hand back the third-party install URLs (full configuration
-/// included — Stremio encodes it in each transport URL).
-///
-/// The password is sent only to Stremio's official API over HTTPS and is
-/// never stored.
+/// Stremio account client: log in, read the add-on collection, return the
+/// third-party install URLs. The password is never stored.
 class Stremio {
   static const _api = 'https://api.strem.io/api';
 

@@ -9,12 +9,8 @@ import '../services/db.dart';
 import '../services/net.dart';
 import '../services/trakt.dart';
 
-/// Full-screen player.
-///
-/// Error philosophy: an audio-codec failure (TrueHD & friends) must never
-/// block a playing video — it gets a one-time dismissible banner and an
-/// automatic switch to a working audio track. The full error panel appears
-/// only when playback is genuinely stalled, after one silent retry.
+/// Player. Audio-codec failures never block a playing video (banner +
+/// auto track switch); the full error panel only appears when truly stalled.
 class PlayerScreen extends StatefulWidget {
   final String url; // http(s) URL or local file path
   final String title;
@@ -544,9 +540,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : const SizedBox.shrink(),
               ),
             ),
-            // Our own subtitle overlay. Bottom-aligned padding (not stack
-            // positioning) so the Position slider always moves it; while the
-            // style dialog is open a preview line is shown even in silence.
+            // Custom subtitle overlay; shows a preview line while styling.
             StreamBuilder<List<String>>(
               stream: player.stream.subtitle,
               builder: (_, snap) {
@@ -750,12 +744,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     ),
                                   ),
                                 ),
-                                IconButton(
-                                    icon: Icon(fullscreen
-                                        ? Icons.fullscreen_exit
-                                        : Icons.fullscreen),
-                                    tooltip: 'Fullscreen (F)',
-                                    onPressed: _toggleFullscreen),
+                                if (_desktop)
+                                  IconButton(
+                                      icon: Icon(fullscreen
+                                          ? Icons.fullscreen_exit
+                                          : Icons.fullscreen),
+                                      tooltip: 'Fullscreen (F)',
+                                      onPressed: _toggleFullscreen),
                               ]),
                             ]);
                       },

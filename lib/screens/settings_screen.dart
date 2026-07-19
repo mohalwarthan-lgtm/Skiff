@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
@@ -20,7 +22,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? device;
   Timer? pollTimer;
   String? traktNote, storageNote, profileNote, stremioNote, error;
-  bool browserWaiting = false;
   late final stremioEmailCtrl = TextEditingController();
   late final stremioPassCtrl = TextEditingController();
   late final dirCtrl =
@@ -38,32 +39,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     stremioEmailCtrl.dispose();
     stremioPassCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _connectBrowser() async {
-    setState(() => error = null);
-    // Unbundled builds: persist the typed credentials first, same as the
-    // code flow does.
-    if (!Config.hasBundledTrakt) {
-      if (idCtrl.text.isEmpty || secretCtrl.text.isEmpty) {
-        setState(
-            () => error = 'Enter your Trakt client ID and secret first.');
-        return;
-      }
-      Db.setSetting('trakt_client_id', idCtrl.text.trim());
-      Db.setSetting('trakt_client_secret', secretCtrl.text.trim());
-    }
-    setState(() => browserWaiting = true);
-    try {
-      await Trakt.browserAuth();
-      setState(() => traktNote = 'Connected — importing your Trakt history…');
-      final msg = await Trakt.pullAll().catchError((e) => '$e');
-      if (mounted) setState(() => traktNote = msg);
-    } catch (e) {
-      if (mounted) setState(() => error = '$e');
-    } finally {
-      if (mounted) setState(() => browserWaiting = false);
-    }
   }
 
   Future<void> _connect() async {
@@ -181,9 +156,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ]),
                     if (traktNote != null) Text(traktNote!, style: hint),
                     Text(
-                        'Everything is automatic: playback scrobbles while you '
-                        'watch, shelf changes and watched flags push to Trakt, '
-                        'and your history pulls in the background every 30 minutes.',
+                        'Fully automatic: watching, shelves, and history sync '
+                        'both ways in the background.',
                         style: hint),
                   ])
                 : device != null
@@ -235,29 +209,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 'Sign in once — Skiff keeps your library and '
                                 'Trakt in sync automatically after that.',
                                 style: hint),
-                          if (browserWaiting) ...[
-                            Row(children: [
-                              const SizedBox(
-                                  width: 16, height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2)),
-                              const SizedBox(width: 10),
-                              Text(
-                                  'Waiting for you to authorize in the '
-                                  'browser…',
-                                  style: hint),
-                            ]),
-                          ] else
-                            Row(children: [
-                              FilledButton(
-                                  onPressed: _connectBrowser,
-                                  child: const Text('Connect Trakt')),
-                              const SizedBox(width: 10),
-                              TextButton(
-                                  onPressed: _connect,
-                                  child: const Text(
-                                      'Connect with a code (TV)')),
-                            ]),
+                          FilledButton(
+                              onPressed: _connect,
+                              child: const Text('Connect Trakt')),
                         ],
                       ),
           ),
@@ -273,9 +227,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                  'Sign in once to pull your add-ons from your Stremio '
-                  'account — full configuration included. Your password is '
-                  'sent only to Stremio and never stored.',
+                  'Pull your add-ons (with their configuration) from your '
+                  'Stremio account. Password goes only to Stremio, never '
+                  'stored.',
                   style: hint),
               const SizedBox(height: 10),
               Row(children: [
@@ -283,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: TextField(
                     controller: stremioEmailCtrl,
                     decoration:
-                        const InputDecoration(labelText: 'Stremio email'),
+                        const InputDecoration(labelText: 'Email'),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -357,6 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) ...[
         const Text('STORAGE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
@@ -428,17 +383,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
-                const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        ],
+        const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                  'Move SkiffBox between devices: export writes one file (and '
-                  'copies it to your clipboard) containing your add-ons, '
-                  'library, watch progress, settings, and your Trakt login '
-                  'tokens - importing on another device signs you in '
-                  'automatically. Treat the file like a password.',
+                  'One file with your add-ons, library, progress, settings, '
+                  'and Trakt login. Import it on any device. Treat it like a '
+                  'password.',
                   style: hint),
               const SizedBox(height: 8),
               Row(children: [

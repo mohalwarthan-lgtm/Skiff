@@ -4,10 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import 'addons.dart';
 import 'db.dart';
 
-/// Portable profile: one JSON blob carrying add-ons, library, progress,
-/// settings, and the offline metadata cache. Export it on one device,
-/// import it on another (Windows, Android, anything Flutter runs on) and
-/// Skiff comes up identical. Downloads are excluded (paths are per-device).
+/// Portable profile: add-on URLs, library, progress, settings, and Trakt
+/// login in one JSON file. Device-specific paths and downloads stay local.
 class Profile {
   /// Paths are per-device; they never travel inside a profile.
   static const _deviceKeys = {'download_dir', 'cache_dir'};

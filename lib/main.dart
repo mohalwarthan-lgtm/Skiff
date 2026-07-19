@@ -14,9 +14,7 @@ import 'screens/settings_screen.dart';
 import 'services/db.dart';
 import 'services/trakt.dart';
 
-/// The exe rename (skiff -> skiffbox) moved the app-data folder. If the
-/// new folder is empty and the old one exists, copy everything across once
-/// - library, settings, downloads - so nothing is lost.
+/// One-time copy of app data from the old skiff folder after the rename.
 Future<void> _migrateOldSkiffData() async {
   try {
     final cur = await getApplicationSupportDirectory();
@@ -53,11 +51,7 @@ Future<void> main() async {
   }
   await _migrateOldSkiffData();
   await Db.init();
-  // One engine, loaded once, shared by the Dart side and the native texture
-  // plugins alike. The cloud build replaces the DLL next to skiff.exe with a
-  // full-codec build, so ALL components use the same upgraded engine -
-  // loading a second copy via the libmpv: parameter is what caused the
-  // native crashes (handles from one engine passed into the other).
+  // One shared engine; the cloud build swaps in the full-codec DLL.
   MediaKit.ensureInitialized();
   runApp(const SkiffApp());
 
@@ -114,8 +108,16 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
-/// Thin line-art icons (variable weight 300); the filled face appears only
-/// inside the selection pill.
+const _tabs = <(IconData, String)>[
+  (Symbols.home, 'Home'),
+  (Symbols.video_library, 'Library'),
+  (Symbols.explore, 'Discover'),
+  (Symbols.download, 'Downloads'),
+  (Symbols.extension, 'Add-ons'),
+  (Symbols.settings, 'Settings'),
+];
+
+/// Thin icons; filled face only when selected.
 NavigationRailDestination _dest(IconData symbol, String label) =>
     NavigationRailDestination(
       icon: Icon(symbol, weight: 300, fill: 0),
@@ -138,9 +140,7 @@ class _ShellState extends State<Shell> with WindowListener {
     super.dispose();
   }
 
-  /// Windows sometimes leaves the Flutter surface stale after maximize /
-  /// restore (the "frozen until I resize by hand" effect). Nudging the
-  /// engine to paint a couple of frames snaps it back instantly.
+  /// Repaint after maximize/restore - Windows can leave the surface stale.
   void _repaintKick() {
     WidgetsBinding.instance.scheduleForcedFrame();
     Future.delayed(const Duration(milliseconds: 60),
@@ -171,6 +171,24 @@ class _ShellState extends State<Shell> with WindowListener {
       AddonsScreen(),
       SettingsScreen(),
     ];
+    // Wide screens: side rail. Phones: bottom tabs.
+    final wide = MediaQuery.sizeOf(context).width >= 640;
+    if (!wide) {
+      return Scaffold(
+        body: SafeArea(child: screens[index]),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: (i) => setState(() => index = i),
+          destinations: [
+            for (final d in _tabs)
+              NavigationDestination(
+                  icon: Icon(d.$1, weight: 300, fill: 0),
+                  selectedIcon: Icon(d.$1, weight: 400, fill: 1),
+                  label: d.$2),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       body: Row(
         children: [
@@ -192,12 +210,7 @@ class _ShellState extends State<Shell> with WindowListener {
               ]),
             ),
             destinations: [
-              _dest(Symbols.home, 'Home'),
-              _dest(Symbols.video_library, 'Library'),
-              _dest(Symbols.explore, 'Discover'),
-              _dest(Symbols.download, 'Downloads'),
-              _dest(Symbols.extension, 'Add-ons'),
-              _dest(Symbols.settings, 'Settings'),
+              for (final d in _tabs) _dest(d.$1, d.$2),
             ],
           ),
           const VerticalDivider(width: 1),

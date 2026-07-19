@@ -1,12 +1,7 @@
 import 'package:http/http.dart' as http;
 
-/// Resolves a stream URL to its final direct form before playback.
-///
-/// Addon resolver endpoints (like AIOStreams' /resolve/...) often reply with
-/// a redirect OR a small text body containing the real CDN link - a contract
-/// Stremio understands but a raw player does not ("Reading plaintext
-/// playlist" -> failure). We walk that chain here and hand the player the
-/// final media URL. Downloads use the same path, so both behave identically.
+/// Resolves a stream URL to its final direct form: follows redirects and
+/// resolver text responses so the player always gets a playable link.
 class Net {
   /// A browser-like UA defeats naive client filtering on resolver hosts.
   static const ua =
