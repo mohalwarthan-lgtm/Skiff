@@ -772,7 +772,6 @@ class _EpisodeTile extends StatelessWidget {
 
     final hint = Theme.of(context).hintColor;
     return ListTile(
-          hoverColor: const Color(0x1235D6E8),
       dense: true,
       leading: selecting
           ? Checkbox(value: isSelected, onChanged: (_) => onSelectToggle())
