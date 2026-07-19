@@ -614,7 +614,7 @@ class Trakt {
         // the last sync - keeps large libraries cheap.
         final fingerprint =
             '${e['last_watched_at'] ?? ''}|${e['plays'] ?? ''}';
-        final ckey = 'traktprog|' + imdb;
+        final ckey = 'traktprog2|' + imdb;
         if (Db.meta.get(ckey) == fingerprint) {
           nS++;
           continue;
@@ -633,6 +633,19 @@ class Trakt {
               Db.markWatched('series', t.$1, t.$2, true);
               nEp++;
             }
+          }
+          // Every aired episode watched -> Completed. Only promotes from
+          // Watching; a new season airing never demotes automatically.
+          final airedN =
+              ((prog['data'] as Map?)?['aired'] as num?)?.toInt() ?? 0;
+          final doneN =
+              ((prog['data'] as Map?)?['completed'] as num?)?.toInt() ?? 0;
+          final st = Db.itemStatus('series', localId);
+          if (airedN > 0 &&
+              doneN >= airedN &&
+              (st == null || st == 'watching')) {
+            Db.setStatus('series', localId, 'completed',
+                name: e['show']?['title']);
           }
           await Db.meta.put(ckey, fingerprint);
           nS++;
