@@ -20,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? device;
   Timer? pollTimer;
   String? traktNote, storageNote, profileNote, stremioNote, error;
+  bool browserWaiting = false;
   late final stremioEmailCtrl = TextEditingController();
   late final stremioPassCtrl = TextEditingController();
   late final dirCtrl =
@@ -37,6 +38,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     stremioEmailCtrl.dispose();
     stremioPassCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _connectBrowser() async {
+    setState(() {
+      error = null;
+      browserWaiting = true;
+    });
+    try {
+      await Trakt.browserAuth();
+      setState(() => traktNote = 'Connected — importing your Trakt history…');
+      final msg = await Trakt.pullAll().catchError((e) => '$e');
+      if (mounted) setState(() => traktNote = msg);
+    } catch (e) {
+      if (mounted) setState(() => error = '$e');
+    } finally {
+      if (mounted) setState(() => browserWaiting = false);
+    }
   }
 
   Future<void> _connect() async {
@@ -208,9 +226,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 'Sign in once — Skiff keeps your library and '
                                 'Trakt in sync automatically after that.',
                                 style: hint),
-                          FilledButton(
-                              onPressed: _connect,
-                              child: const Text('Connect Trakt')),
+                          if (browserWaiting) ...[
+                            Row(children: [
+                              const SizedBox(
+                                  width: 16, height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2)),
+                              const SizedBox(width: 10),
+                              Text(
+                                  'Waiting for you to authorize in the '
+                                  'browser…',
+                                  style: hint),
+                            ]),
+                          ] else
+                            Row(children: [
+                              FilledButton(
+                                  onPressed: _connectBrowser,
+                                  child: const Text('Connect Trakt')),
+                              const SizedBox(width: 10),
+                              TextButton(
+                                  onPressed: _connect,
+                                  child: const Text(
+                                      'Connect with a code (TV)')),
+                            ]),
                         ],
                       ),
           ),
@@ -226,9 +264,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                  'Sign in once to pull your add-ons from your Stremio '
-                  'account — full configuration included. Your password is '
-                  'sent only to Stremio and never stored.',
+                  'Sign in once to pull your add-ons from your Stremio.',
                   style: hint),
               const SizedBox(height: 10),
               Row(children: [
@@ -236,7 +272,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: TextField(
                     controller: stremioEmailCtrl,
                     decoration:
-                        const InputDecoration(labelText: 'Stremio email'),
+                        const InputDecoration(labelText: 'Email'),
                   ),
                 ),
                 const SizedBox(width: 10),
