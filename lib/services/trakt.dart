@@ -606,7 +606,40 @@ class Trakt {
         Db.setStatus('series', localId, 'watching',
             name: e['show']?['title']);
       }
-      for (final season in (e['seasons'] as List? ?? [])) {
+      // Trakt omits season data on this endpoint - fetch the per-show
+      // watched progress instead (per-episode completed flags).
+      var seasonsList = e['seasons'] as List? ?? const [];
+      if (seasonsList.isEmpty) {
+        // Skip the fetch when this show's history hasn't changed since
+        // the last sync - keeps large libraries cheap.
+        final fingerprint =
+            '${e['last_watched_at'] ?? ''}|${e['plays'] ?? ''}';
+        final ckey = 'traktprog|' + imdb;
+        if (Db.meta.get(ckey) == fingerprint) {
+          nS++;
+          continue;
+        }
+        try {
+          final prog = await _get('/shows/$imdb/progress/watched');
+          for (final season
+              in ((prog['data'] as Map?)?['seasons'] as List? ??
+                  const [])) {
+            nSe++;
+            final seNum = (season['number'] as num?)?.toInt();
+            for (final ep in (season['episodes'] as List? ?? const [])) {
+              if (ep['completed'] != true) continue;
+              final t = await _localTarget(
+                  'series', imdb, seNum, (ep['number'] as num?)?.toInt());
+              Db.markWatched('series', t.$1, t.$2, true);
+              nEp++;
+            }
+          }
+          await Db.meta.put(ckey, fingerprint);
+          nS++;
+          continue;
+        } catch (_) {/* fall back to inline data below */}
+      }
+      for (final season in seasonsList) {
         nSe++;
         final seNum = (season['number'] as num?)?.toInt();
         for (final ep in (season['episodes'] as List? ?? [])) {
