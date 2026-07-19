@@ -614,7 +614,7 @@ class Trakt {
         // the last sync - keeps large libraries cheap.
         final fingerprint =
             '${e['last_watched_at'] ?? ''}|${e['plays'] ?? ''}';
-        final ckey = 'traktprog4|' + imdb;
+        final ckey = 'traktprog5|' + imdb;
         if (Db.meta.get(ckey) == fingerprint) {
           nS++;
           continue;
@@ -645,8 +645,25 @@ class Trakt {
           final ended = showStatus == 'ended' || showStatus == 'canceled';
           // Nothing scheduled to watch next = finished, even if the
           // network calls the show "returning".
-          final finished =
-              ended || (prog['data'] as Map?)?['next_episode'] == null;
+          final nextEp = (prog['data'] as Map?)?['next_episode'];
+          // A next episode blocks completion only if it belongs to a
+          // season already started (= next week's episode of a show
+          // being followed). Announced future seasons - dated or stub -
+          // don't count as something left to watch.
+          var blocking = false;
+          if (!ended && nextEp is Map && nextEp['first_aired'] != null) {
+            final nSeason = (nextEp['season'] as num?)?.toInt();
+            for (final season in ((prog['data'] as Map?)?['seasons']
+                    as List? ??
+                const [])) {
+              if ((season['number'] as num?)?.toInt() != nSeason) continue;
+              final eps = season['episodes'] as List? ?? const [];
+              blocking =
+                  eps.any((ep) => ep is Map && ep['completed'] == true);
+              break;
+            }
+          }
+          final finished = ended || !blocking;
           if (airedN > 0 && doneN >= airedN) {
             if (finished && (st == null || st == 'watching')) {
               Db.setStatus('series', localId, 'completed',
