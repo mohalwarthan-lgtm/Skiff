@@ -173,6 +173,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
     ('HDTV', ['hdtv']),
   ];
 
+  /// Cached = playable right now: has a direct url and the add-on does
+  /// not flag it as needing processing (uncached results are marked
+  /// notWebReady by the add-on).
+  bool _cachedOf(Map st) =>
+      st['url'] != null && st['behaviorHints']?['notWebReady'] != true;
+
   /// Label for a picked stream: the add-on's group label when present,
   /// else best-effort from its text.
   String _pickLabel(Map pick, String quality, String Function(String) lab) {
@@ -231,7 +237,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
               final groups =
                   await Addons.streamsFor(widget.type, v['id']);
               return [for (final g in groups) ...(g['streams'] as List)]
-                  .whereType<Map>()
+                  .whereType<Map>().where(_cachedOf)
                   .toList();
             } catch (_) {
               return <Map>[];
@@ -325,9 +331,18 @@ class _DetailsScreenState extends State<DetailsScreen> {
       }
     }
 
+    if (found.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No cached quality is available for every '
+                'selected episode.')));
+      }
+      return;
+    }
+
     var quality = Db.setting('batch_quality') ?? '';
     if (!found.contains(quality)) {
-      quality = found.isNotEmpty ? found.first : 'any';
+      quality = found.first;
     }
     var skipWatched = true;
     final ok = await showDialog<bool>(
@@ -342,9 +357,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 const Text('Quality'),
                 const SizedBox(height: 8),
                 Wrap(spacing: 8, children: [
-                  for (final q in [...found, 'any'])
+                  for (final q in found)
                     ChoiceChip(
-                      label: Text(q == 'any' ? 'Top pick' : labelOf(q)),
+                      label: Text(labelOf(q)),
                       selected: quality == q,
                       onSelected: (_) => setD(() => quality = q),
                     ),
@@ -360,7 +375,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 Text(
                     'Only qualities available for every selected episode '
                     'are offered - the whole batch downloads in one '
-                    'quality, top stream per your AIOStreams ranking.',
+                    'quality, cached streams only, top per your ranking.',
                     style: TextStyle(
                         fontSize: 12, color: Theme.of(context).hintColor)),
                 if (!hasCombos && sampleText.isNotEmpty) ...[
@@ -401,26 +416,15 @@ class _DetailsScreenState extends State<DetailsScreen> {
         try {
           final groups = await Addons.streamsFor(widget.type, vid);
           final flat = [for (final g in groups) ...(g['streams'] as List)]
-              .whereType<Map>()
+              .whereType<Map>().where(_cachedOf)
               .toList();
           Map? pick;
-          if (quality != 'any') {
-            for (final st in flat) {
-              final g = '${st['behaviorHints']?['bingeGroup'] ?? ''}';
-              if (st['url'] != null &&
-                  (g == quality ||
-                      _matchesQuality(textOf(st), quality))) {
-                pick = st;
-                break;
-              }
-            }
-          }
-          if (pick == null && quality == 'any') {
-            for (final st in flat) {
-              if (st['url'] != null) {
-                pick = st;
-                break;
-              }
+          for (final st in flat) {
+            final g = '${st['behaviorHints']?['bingeGroup'] ?? ''}';
+            if (st['url'] != null &&
+                (g == quality || _matchesQuality(textOf(st), quality))) {
+              pick = st;
+              break;
             }
           }
           // Chosen quality missing for this episode? Skip rather than
@@ -783,6 +787,7 @@ class _EpisodeTile extends StatelessWidget {
               ? Text(upcoming ? 'Upcoming · $relStr' : relStr,
                   style: TextStyle(fontSize: 11, color: hint))
               : null,
+      hoverColor: const Color(0x1F35D6E8),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
         if (downloaded)
           const Icon(Icons.download_done, size: 18, color: Color(0xFF63C589)),
