@@ -163,6 +163,41 @@ class _DetailsScreenState extends State<DetailsScreen> {
         duration: const Duration(seconds: 2)));
   }
 
+  /// Release types recognized in stream labels (first match wins).
+  static const _relTypes = [
+    ('Remux', ['remux']),
+    ('BluRay', ['bluray', 'blu-ray']),
+    ('WEB-DL', ['web-dl', 'webdl']),
+    ('WEBRip', ['webrip']),
+    ('HDTV', ['hdtv']),
+  ];
+
+  /// Best-effort "1080p BluRay" style label from a stream's text.
+  String _qualityOf(String text) {
+    const resOrder = ['2160p', '4k', '1080p', '720p', '480p'];
+    for (final r in resOrder) {
+      if (!text.contains(r)) continue;
+      final label = r == '4k' ? '4K' : r;
+      for (final rt in _relTypes) {
+        if (rt.$2.any(text.contains)) return '$label ${rt.$1}';
+      }
+      return label;
+    }
+    return '';
+  }
+
+  /// "1080p BluRay" -> resolution AND any of that type's tokens.
+  bool _matchesQuality(String text, String q) {
+    final parts = q.toLowerCase().split(' ');
+    if (!text.contains(parts.first)) return false;
+    if (parts.length == 1) return true;
+    final typeLabel = q.substring(q.indexOf(' ') + 1);
+    for (final rt in _relTypes) {
+      if (rt.$1 == typeLabel) return rt.$2.any(text.contains);
+    }
+    return true;
+  }
+
   Future<void> _batchDownload(List eps) async {
     final m = meta;
     if (m == null || eps.isEmpty) return;
@@ -171,22 +206,64 @@ class _DetailsScreenState extends State<DetailsScreen> {
         '${st['name'] ?? ''} ${st['title'] ?? ''} ${st['description'] ?? ''}'
             .toLowerCase();
 
-    // Sample the first episode to learn which qualities exist here.
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Checking available qualities…'),
-        duration: Duration(seconds: 2)));
-    var sample = <Map>[];
-    try {
-      final groups = await Addons.streamsFor(widget.type, eps.first['id']);
-      sample = [for (final g in groups) ...(g['streams'] as List)]
-          .whereType<Map>()
-          .toList();
-    } catch (_) {}
+    // Check every selected episode so only combinations available for the
+    // whole batch are offered - all downloads come out one quality.
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:
+            Text('Checking qualities across ${eps.length} episodes…'),
+        duration: const Duration(seconds: 3)));
+    final perEp = <List<Map>>[];
+    for (var i = 0; i < eps.length; i += 4) {
+      perEp.addAll(await Future.wait([
+        for (final v in eps.skip(i).take(4))
+          () async {
+            try {
+              final groups =
+                  await Addons.streamsFor(widget.type, v['id']);
+              return [for (final g in groups) ...(g['streams'] as List)]
+                  .whereType<Map>()
+                  .toList();
+            } catch (_) {
+              return <Map>[];
+            }
+          }(),
+      ]));
+    }
 
-    const order = ['2160p', '4k', '1080p', '720p', '480p'];
-    final found = [
-      for (final q in order)
-        if (sample.any((st) => textOf(st).contains(q))) q
+    const resOrder = ['2160p', '4k', '1080p', '720p', '480p'];
+    Set<String> combosOf(List<Map> flat) {
+      final out = <String>{};
+      for (final r in resOrder) {
+        final label = r == '4k' ? '4K' : r;
+        var covered = false;
+        for (final rt in _relTypes) {
+          if (flat.any((st) =>
+              textOf(st).contains(r) && rt.$2.any(textOf(st).contains))) {
+            out.add('$label ${rt.$1}');
+            covered = true;
+          }
+        }
+        if (!covered && flat.any((st) => textOf(st).contains(r))) {
+          out.add(label);
+        }
+      }
+      return out;
+    }
+
+    Set<String>? common;
+    for (final flat in perEp) {
+      if (flat.isEmpty) continue; // don't let one failed fetch empty it all
+      final c = combosOf(flat);
+      common = common == null ? c : common.intersection(c);
+    }
+    final found = <String>[
+      for (final r in resOrder)
+        for (final label in [
+          for (final rt in _relTypes)
+            '${r == '4k' ? '4K' : r} ${rt.$1}',
+          r == '4k' ? '4K' : r,
+        ])
+          if ((common ?? const {}).contains(label)) label
     ];
 
     var quality = Db.setting('batch_quality') ?? '';
@@ -208,11 +285,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 Wrap(spacing: 8, children: [
                   for (final q in [...found, 'any'])
                     ChoiceChip(
-                      label: Text(q == 'any'
-                          ? 'Top pick'
-                          : q == '4k'
-                              ? '4K'
-                              : q),
+                      label: Text(q == 'any' ? 'Top pick' : q),
                       selected: quality == q,
                       onSelected: (_) => setD(() => quality = q),
                     ),
@@ -226,8 +299,9 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                    'Within the chosen quality the top stream wins — cached '
-                    'first, language and sources per your AIOStreams setup.',
+                    'Only qualities available for every selected episode '
+                    'are offered - the whole batch downloads in one '
+                    'quality, top stream per your AIOStreams ranking.',
                     style: TextStyle(
                         fontSize: 12, color: Theme.of(context).hintColor)),
               ]),
@@ -265,13 +339,13 @@ class _DetailsScreenState extends State<DetailsScreen> {
           Map? pick;
           if (quality != 'any') {
             for (final st in flat) {
-              if (st['url'] != null && textOf(st).contains(quality)) {
+              if (st['url'] != null && _matchesQuality(textOf(st), quality)) {
                 pick = st;
                 break;
               }
             }
           }
-          if (pick == null) {
+          if (pick == null && quality == 'any') {
             for (final st in flat) {
               if (st['url'] != null) {
                 pick = st;
@@ -279,6 +353,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
               }
             }
           }
+          // Chosen quality missing for this episode? Skip rather than
+          // silently mixing qualities.
           if (pick == null) continue;
           final hinted = pick['behaviorHints']?['proxyHeaders']?['request'];
           final headers = hinted is Map
@@ -294,7 +370,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
             url: url,
             displayName: m['name'] ?? widget.id,
             videoTitle:
-                'S${v['season']} E${v['episode']} · ${v['title'] ?? v['name'] ?? ''}',
+                'S${v['season']} E${v['episode']} · ${v['title'] ?? v['name'] ?? ''}'
+                '${_qualityOf(textOf(pick)).isEmpty ? '' : ' · ${_qualityOf(textOf(pick))}'}',
             poster: m['poster'],
             headers: headers,
             subs: subs,
@@ -366,7 +443,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
           ),
         ),
       ),
-      extendBodyBehindAppBar: true,
       body: Stack(fit: StackFit.expand, children: [
         if (bg != null)
           Image.network(bg,
