@@ -46,9 +46,7 @@ class _PosterCardState extends State<PosterCard> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                     width: 1.4,
-                    color: _hover
-                        ? const Color(0x8C35D6E8)
-                        : Colors.transparent),
+                    color: Colors.transparent),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(9),

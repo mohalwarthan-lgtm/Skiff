@@ -592,6 +592,7 @@ class Trakt {
       Db.markWatched('movie', imdb, imdb, true);
       nM++;
     }
+    var nEp = 0;
     for (final e in shows) {
       final imdb = e['show']?['ids']?['imdb'];
       if (imdb == null) continue;
@@ -611,6 +612,7 @@ class Trakt {
           final t = await _localTarget(
               'series', imdb, seNum, (ep['number'] as num?)?.toInt());
           Db.markWatched('series', t.$1, t.$2, true);
+          nEp++;
         }
       }
       nS++;
@@ -661,6 +663,7 @@ class Trakt {
     } catch (_) {/* progress carry-over is best effort */}
 
     syncStatus.value = 'Synced at ' + _clock() +
+        (nEp > 0 ? ' · $nEp episodes' : '') +
         (nPos > 0 ? ' · $nPos positions' : '');
     return 'Synced $nM movies, $nS shows, $nW watchlist items.';
   }

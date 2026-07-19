@@ -183,13 +183,12 @@ class Db {
   }
 
   static void markWatched(String type, String itemId, String videoId, bool watched) {
-    final prev = prog(type, itemId, videoId) ?? {};
+    final prev = prog(type, itemId, videoId);
     progress.put(progKey(type, itemId, videoId), {
+      ...?prev,
       'itemId': itemId,
       'type': type,
       'videoId': videoId,
-      'position': prev['position'] ?? 0.0,
-      'duration': prev['duration'] ?? 0.0,
       'watched': watched,
       'updatedAt': now(),
     });
