@@ -166,11 +166,21 @@ class _DetailsScreenState extends State<DetailsScreen> {
   /// Release types recognized in stream labels (first match wins).
   static const _relTypes = [
     ('Remux', ['remux']),
-    ('BluRay', ['bluray', 'blu-ray']),
-    ('WEB-DL', ['web-dl', 'webdl']),
+    ('BluRay', ['bluray', 'blu-ray', 'blu ray']),
+    ('BDRip', ['bdrip', 'brrip']),
+    ('WEB-DL', ['web-dl', 'webdl', 'web dl']),
     ('WEBRip', ['webrip']),
     ('HDTV', ['hdtv']),
   ];
+
+  /// Label for a picked stream: the add-on's group label when present,
+  /// else best-effort from its text.
+  String _pickLabel(Map pick, String quality, String Function(String) lab) {
+    final g = '${pick['behaviorHints']?['bingeGroup'] ?? ''}';
+    if (g.isNotEmpty) return lab(g);
+    return _qualityOf('${pick['name']} ${pick['title']} ${pick['description']}'
+        .toLowerCase());
+  }
 
   /// Best-effort "1080p BluRay" style label from a stream's text.
   String _qualityOf(String text) {
@@ -230,6 +240,37 @@ class _DetailsScreenState extends State<DetailsScreen> {
       ]));
     }
 
+    String groupOf(Map st) => '${st['behaviorHints']?['bingeGroup'] ?? ''}';
+    String labelOf(String g) {
+      if (!g.contains('|')) return g;
+      final parts = g.split('|').sublist(1);
+      return parts.where((e) => e.trim().isNotEmpty).join(' · ');
+    }
+
+    // Primary: the add-on's own quality groups, in the add-on's own order.
+    final orderedGroups = <String>[];
+    if (perEp.isNotEmpty) {
+      for (final st in perEp.first) {
+        final g = groupOf(st);
+        if (g.isNotEmpty && !orderedGroups.contains(g)) {
+          orderedGroups.add(g);
+        }
+      }
+    }
+    Set<String>? commonG;
+    for (final flat in perEp) {
+      if (flat.isEmpty) continue;
+      final c = {
+        for (final st in flat)
+          if (groupOf(st).isNotEmpty) groupOf(st)
+      };
+      commonG = commonG == null ? c : commonG.intersection(c);
+    }
+    final groupFound = [
+      for (final g in orderedGroups)
+        if ((commonG ?? const {}).contains(g)) g
+    ];
+
     const resOrder = ['2160p', '4k', '1080p', '720p', '480p'];
     Set<String> combosOf(List<Map> flat) {
       final out = <String>{};
@@ -256,15 +297,33 @@ class _DetailsScreenState extends State<DetailsScreen> {
       final c = combosOf(flat);
       common = common == null ? c : common.intersection(c);
     }
-    final found = <String>[
-      for (final r in resOrder)
-        for (final label in [
-          for (final rt in _relTypes)
-            '${r == '4k' ? '4K' : r} ${rt.$1}',
-          r == '4k' ? '4K' : r,
-        ])
-          if ((common ?? const {}).contains(label)) label
-    ];
+    // Text tokens only as a fallback for add-ons without quality groups.
+    final found = groupFound.isNotEmpty
+        ? groupFound
+        : <String>[
+            for (final r in resOrder)
+              for (final label in [
+                for (final rt in _relTypes)
+                  '${r == '4k' ? '4K' : r} ${rt.$1}',
+                r == '4k' ? '4K' : r,
+              ])
+                if ((common ?? const {}).contains(label)) label
+          ];
+
+    // Self-diagnosis: if no release types were recognized, surface a raw
+    // stream label so the wording can be read and the detector taught.
+    final hasCombos =
+        found.any((f) => f.contains('|') || f.contains(' '));
+    var sampleText = '';
+    for (final flat in perEp) {
+      if (flat.isNotEmpty) {
+        sampleText = textOf(flat.first).trim();
+        if (sampleText.length > 140) {
+          sampleText = sampleText.substring(0, 140) + '…';
+        }
+        break;
+      }
+    }
 
     var quality = Db.setting('batch_quality') ?? '';
     if (!found.contains(quality)) {
@@ -285,7 +344,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 Wrap(spacing: 8, children: [
                   for (final q in [...found, 'any'])
                     ChoiceChip(
-                      label: Text(q == 'any' ? 'Top pick' : q),
+                      label: Text(q == 'any' ? 'Top pick' : labelOf(q)),
                       selected: quality == q,
                       onSelected: (_) => setD(() => quality = q),
                     ),
@@ -304,6 +363,14 @@ class _DetailsScreenState extends State<DetailsScreen> {
                     'quality, top stream per your AIOStreams ranking.',
                     style: TextStyle(
                         fontSize: 12, color: Theme.of(context).hintColor)),
+                if (!hasCombos && sampleText.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('No release types recognized. Sample label: "'
+                      '$sampleText"',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).hintColor)),
+                ],
               ]),
           actions: [
             TextButton(
@@ -339,7 +406,10 @@ class _DetailsScreenState extends State<DetailsScreen> {
           Map? pick;
           if (quality != 'any') {
             for (final st in flat) {
-              if (st['url'] != null && _matchesQuality(textOf(st), quality)) {
+              final g = '${st['behaviorHints']?['bingeGroup'] ?? ''}';
+              if (st['url'] != null &&
+                  (g == quality ||
+                      _matchesQuality(textOf(st), quality))) {
                 pick = st;
                 break;
               }
@@ -371,7 +441,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
             displayName: m['name'] ?? widget.id,
             videoTitle:
                 'S${v['season']} E${v['episode']} · ${v['title'] ?? v['name'] ?? ''}'
-                '${_qualityOf(textOf(pick)).isEmpty ? '' : ' · ${_qualityOf(textOf(pick))}'}',
+                '${_pickLabel(pick, quality, labelOf).isEmpty ? '' : ' · ${_pickLabel(pick, quality, labelOf)}'}',
             poster: m['poster'],
             headers: headers,
             subs: subs,
@@ -698,6 +768,7 @@ class _EpisodeTile extends StatelessWidget {
 
     final hint = Theme.of(context).hintColor;
     return ListTile(
+          hoverColor: const Color(0x1235D6E8),
       dense: true,
       leading: selecting
           ? Checkbox(value: isSelected, onChanged: (_) => onSelectToggle())
@@ -863,6 +934,7 @@ class _StreamSheetState extends State<_StreamSheet> {
               for (final g in groups ?? [])
                 for (final s in (g['streams'] as List))
                   ListTile(
+          hoverColor: const Color(0x1235D6E8),
                     dense: true,
                     leading: SizedBox(
                       width: 110,
