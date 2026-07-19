@@ -41,10 +41,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _connectBrowser() async {
-    setState(() {
-      error = null;
-      browserWaiting = true;
-    });
+    setState(() => error = null);
+    // Unbundled builds: persist the typed credentials first, same as the
+    // code flow does.
+    if (!Config.hasBundledTrakt) {
+      if (idCtrl.text.isEmpty || secretCtrl.text.isEmpty) {
+        setState(
+            () => error = 'Enter your Trakt client ID and secret first.');
+        return;
+      }
+      Db.setSetting('trakt_client_id', idCtrl.text.trim());
+      Db.setSetting('trakt_client_secret', secretCtrl.text.trim());
+    }
+    setState(() => browserWaiting = true);
     try {
       await Trakt.browserAuth();
       setState(() => traktNote = 'Connected — importing your Trakt history…');
@@ -264,7 +273,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                  'Sign in once to pull your add-ons from your Stremio.',
+                  'Sign in once to pull your add-ons from your Stremio '
+                  'account — full configuration included. Your password is '
+                  'sent only to Stremio and never stored.',
                   style: hint),
               const SizedBox(height: 10),
               Row(children: [
@@ -272,7 +283,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: TextField(
                     controller: stremioEmailCtrl,
                     decoration:
-                        const InputDecoration(labelText: 'Email'),
+                        const InputDecoration(labelText: 'Stremio email'),
                   ),
                 ),
                 const SizedBox(width: 10),
