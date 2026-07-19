@@ -41,10 +41,16 @@ Future<void> _migrateOldSkiffData() async {
   } catch (_) {/* migration is best-effort; a fresh start still works */}
 }
 
+/// Window management only exists on desktop; mobile builds skip it.
+final bool _isDesktop =
+    Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await windowManager.ensureInitialized(); // window control (fullscreen etc.)
-  await windowManager.setTitle('SkiffBox');
+  if (_isDesktop) {
+    await windowManager.ensureInitialized(); // window control (fullscreen)
+    await windowManager.setTitle('SkiffBox');
+  }
   await _migrateOldSkiffData();
   await Db.init();
   // One engine, loaded once, shared by the Dart side and the native texture
@@ -123,12 +129,12 @@ class _ShellState extends State<Shell> with WindowListener {
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
+    if (_isDesktop) windowManager.addListener(this);
   }
 
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    if (_isDesktop) windowManager.removeListener(this);
     super.dispose();
   }
 

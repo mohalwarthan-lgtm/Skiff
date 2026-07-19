@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -158,7 +159,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         .catchError((_) {});
     saveTimer?.cancel();
     hideTimer?.cancel();
-    if (fullscreen) windowManager.setFullScreen(false);
+    if (fullscreen && _desktop) windowManager.setFullScreen(false);
     player.dispose();
     focusNode.dispose();
     super.dispose();
@@ -237,7 +238,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   // ---------- Fullscreen & keyboard ----------
 
+  static final bool _desktop =
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
   Future<void> _toggleFullscreen() async {
+    if (!_desktop) return; // mobile builds are already full-window
     fullscreen = !fullscreen;
     await windowManager.setFullScreen(fullscreen);
     if (mounted) setState(() {});

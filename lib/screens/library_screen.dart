@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config.dart';
 import '../services/db.dart';
+import '../services/addons.dart';
 import '../services/trakt.dart';
 import 'details_screen.dart';
 import 'widgets.dart';
@@ -12,6 +13,44 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
+  bool _hydrating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrateMissingMeta();
+  }
+
+  /// A fresh device synced from Trakt has library ids but no local
+  /// metadata yet — fetch it from the add-ons, a few titles at a time,
+  /// and fill in names and posters as they arrive.
+  Future<void> _hydrateMissingMeta() async {
+    if (_hydrating) return;
+    _hydrating = true;
+    try {
+      final missing = Db.items.values
+          .cast<Map>()
+          .where((it) => Db.cachedMeta(it['type'], it['id']) == null)
+          .toList();
+      for (var i = 0; i < missing.length; i += 4) {
+        await Future.wait([
+          for (final it in missing.skip(i).take(4))
+            () async {
+              try {
+                final m = await Addons.metaFor(it['type'], it['id']);
+                Db.cacheMeta(it['type'], it['id'], m);
+                Db.touchItem(it['type'], it['id'],
+                    name: m['name'], poster: m['poster']);
+              } catch (_) {/* no capable add-on yet - retried next open */}
+            }(),
+        ]);
+        if (mounted) setState(() {});
+      }
+    } finally {
+      _hydrating = false;
+    }
+  }
+
   String? tab; // null = all
 
   void _open(String type, String id) async {

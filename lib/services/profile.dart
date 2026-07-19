@@ -9,6 +9,9 @@ import 'db.dart';
 /// import it on another (Windows, Android, anything Flutter runs on) and
 /// Skiff comes up identical. Downloads are excluded (paths are per-device).
 class Profile {
+  /// Paths are per-device; they never travel inside a profile.
+  static const _deviceKeys = {'download_dir', 'cache_dir'};
+
   static String exportJson() => jsonEncode({
         'version': 2,
         'app': 'skiff',
@@ -20,7 +23,8 @@ class Profile {
         ],
         'items': _stringKeys(Db.items.toMap()),
         'progress': _stringKeys(Db.progress.toMap()),
-        'settings': _stringKeys(Db.settings.toMap()),
+        'settings': _stringKeys(Db.settings.toMap())
+          ..removeWhere((k, v) => _deviceKeys.contains(k)),
       });
 
   static Map<String, dynamic> _stringKeys(Map m) =>
@@ -68,6 +72,7 @@ class Profile {
       final section = data[key];
       if (section is Map) {
         for (final e in section.entries) {
+          if (key == 'settings' && _deviceKeys.contains(e.key)) continue;
           await box.put(e.key, e.value);
           n++;
         }

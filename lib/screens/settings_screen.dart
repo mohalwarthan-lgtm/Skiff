@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/profile.dart';
+import '../services/stremio.dart';
+import '../services/addons.dart';
 import '../config.dart';
 import '../services/db.dart';
 import '../services/trakt.dart';
@@ -17,7 +19,9 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? device;
   Timer? pollTimer;
-  String? traktNote, storageNote, profileNote, error;
+  String? traktNote, storageNote, profileNote, stremioNote, error;
+  late final stremioEmailCtrl = TextEditingController();
+  late final stremioPassCtrl = TextEditingController();
   late final dirCtrl =
       TextEditingController(text: Db.setting('download_dir') ?? '');
   late final cacheCtrl =
@@ -30,6 +34,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     pollTimer?.cancel();
     dirCtrl.dispose();
     cacheCtrl.dispose();
+    stremioEmailCtrl.dispose();
+    stremioPassCtrl.dispose();
     super.dispose();
   }
 
@@ -213,6 +219,97 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text(error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
         const SizedBox(height: 20),
+        const Text('SWITCHING FROM STREMIO?',
+            style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                  'Sign in once to pull your add-ons from your Stremio '
+                  'account — full configuration included. Your password is '
+                  'sent only to Stremio and never stored.',
+                  style: hint),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: stremioEmailCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Stremio email'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: stremioPassCtrl,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Password'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.tonal(
+                  onPressed: () async {
+                    final email = stremioEmailCtrl.text.trim();
+                    final pass = stremioPassCtrl.text;
+                    if (email.isEmpty || pass.isEmpty) return;
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Pull add-ons from Stremio?'),
+                        content: const Text(
+                            'Your current add-on list in SkiffBox will be '
+                            'replaced by the add-ons from your Stremio '
+                            'account.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel')),
+                          FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Pull add-ons')),
+                        ],
+                      ),
+                    );
+                    if (ok != true) return;
+                    setState(() => stremioNote = 'Signing in to Stremio…');
+                    try {
+                      final key = await Stremio.login(email, pass);
+                      setState(
+                          () => stremioNote = 'Reading add-on collection…');
+                      final urls = await Stremio.addonUrls(key);
+                      await Db.addons.clear();
+                      var installed = 0;
+                      var failed = 0;
+                      for (final u in urls) {
+                        try {
+                          await Addons.install(u);
+                          installed++;
+                        } catch (_) {
+                          failed++;
+                        }
+                      }
+                      stremioPassCtrl.clear();
+                      setState(() => stremioNote =
+                          'Imported $installed add-on(s) from Stremio' +
+                              (failed > 0 ? ' ($failed failed)' : '') +
+                              '.');
+                    } catch (e) {
+                      setState(() => stremioNote = '$e');
+                    }
+                  },
+                  child: const Text('Pull add-ons'),
+                ),
+              ]),
+              if (stremioNote != null)
+                Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(stremioNote!, style: hint)),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 20),
         const Text('STORAGE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
@@ -225,9 +322,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   decoration: const InputDecoration(
                       labelText: 'Download folder',
                       helperText:
-                          'Empty = app data folder. Already-downloaded titles '
-                          'keep playing from where they are; only new '
-                          'downloads use the new folder.'),
+                          'New downloads are saved here. Empty = default.'),
                   onChanged: (v) => Db.setSetting('download_dir', v.trim()),
                 ),
               ),
@@ -255,9 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   decoration: const InputDecoration(
                       labelText: 'Streaming cache folder',
                       helperText:
-                          'Where the player buffers streams on disk. Empty = '
-                          'system default (C drive). Point it at another '
-                          'drive if C is tight. Applies to new playback.'),
+                          'Disk buffer for streaming. Empty = default.'),
                   onChanged: (v) => Db.setSetting('cache_dir', v.trim()),
                 ),
               ),
