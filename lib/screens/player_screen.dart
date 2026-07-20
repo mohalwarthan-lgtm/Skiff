@@ -100,8 +100,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _onEngineError('$e');
       return;
     }
-    Trakt.scrobble('start', widget.type, widget.itemId, widget.videoId, 0)
-        .catchError((_) {});
 
     player.stream.duration.listen((d) {
       if (!resumed && d.inSeconds > 0) {
@@ -242,6 +240,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     fullscreen = !fullscreen;
     await windowManager.setFullScreen(fullscreen);
     if (mounted) setState(() {});
+    // Windows can leave the video surface stale after the mode switch
+    // (frozen picture, audio continues) - force a few frames.
+    for (var i = 0; i < 4; i++) {
+      await Future.delayed(const Duration(milliseconds: 130));
+      if (!mounted) return;
+      setState(() {});
+      WidgetsBinding.instance.scheduleForcedFrame();
+    }
   }
 
   void _onKey(KeyEvent e) {

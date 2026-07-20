@@ -302,6 +302,9 @@ class Trakt {
       syncStatus.value = 'Scrobble skipped — no Trakt mapping ($videoId)';
       return;
     }
+    // Trakt rejects pause/stop under 1% - and sending them would only
+    // clobber a real saved position with nothing.
+    if (action != 'start' && pct < 1) return;
     await ensureFresh();
     final c = client()!;
     final res = await http.post(Uri.parse('$_api/scrobble/$action'),

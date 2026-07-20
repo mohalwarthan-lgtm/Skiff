@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 /// Local persistence. Hive is pure Dart (no native libraries to link),
 /// which keeps the build bulletproof. Records are plain JSON-style maps.
 class Db {
+  /// Live UI text scale (0.9-1.3), applied app-wide.
+  static final uiScale = ValueNotifier<double>(1.0);
+
   static late Box addons; // transportUrl -> {manifest, enabled}
   static late Box items; // "type|id" -> {id,type,name,poster,status,updatedAt}
   static late Box progress; // "type|itemId|videoId" -> {position,duration,watched,updatedAt}
@@ -16,6 +20,8 @@ class Db {
     items = await Hive.openBox('items');
     progress = await Hive.openBox('progress');
     settings = await Hive.openBox('settings');
+    uiScale.value =
+        double.tryParse(setting('ui_scale') ?? '') ?? 1.0;
     downloads = await Hive.openBox('downloads');
     meta = await Hive.openBox('meta');
   }
@@ -145,9 +151,14 @@ class Db {
     if (prev?['watched'] == true) return;
     final stamp = at ?? now();
     final prevAt = (prev?['updatedAt'] ?? 0) as num;
-    // Whoever watched most recently is the authority. If the local row is
-    // newer than Trakt's paused_at, keep the local position untouched.
-    if (stamp < prevAt) return;
+    // Whoever watched most recently is the authority - EXCEPT that a
+    // barely-started local row (created by just opening an episode)
+    // never outranks a real position watched elsewhere.
+    if (stamp < prevAt) {
+      final pos = (prev?['position'] ?? 0) as num;
+      final ppct = (prev?['pct'] ?? 0) as num;
+      if (pos >= 60 || ppct >= 1) return; // local progress is real - keep
+    }
     final merged = <dynamic, dynamic>{
       ...?prev,
       'itemId': itemId,

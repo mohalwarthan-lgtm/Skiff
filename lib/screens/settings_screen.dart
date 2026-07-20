@@ -315,6 +315,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
+        const Text('INTERFACE',
+            style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Size — makes text and controls larger everywhere.',
+                      style: hint),
+                  ValueListenableBuilder<double>(
+                    valueListenable: Db.uiScale,
+                    builder: (context, v, _) => Row(children: [
+                      Expanded(
+                        child: Slider(
+                          value: v.clamp(0.9, 1.3),
+                          min: 0.9,
+                          max: 1.3,
+                          divisions: 8,
+                          label: '${(v * 100).round()}%',
+                          onChanged: (nv) {
+                            Db.uiScale.value = nv;
+                            Db.setSetting('ui_scale', nv.toString());
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                          width: 44,
+                          child: Text('${(v * 100).round()}%')),
+                    ]),
+                  ),
+                ]),
+          ),
+        ),
+        const SizedBox(height: 20),
         const Text('ANILIST',
             style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(

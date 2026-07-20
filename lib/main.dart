@@ -78,7 +78,14 @@ class SkiffApp extends StatelessWidget {
     const panel = Color(0xFF122036);
     const orange = Color(0xFFF4791F);
     const cyan = Color(0xFF35D6E8);
-    return MaterialApp(
+    return ValueListenableBuilder<double>(
+        valueListenable: Db.uiScale,
+        builder: (context, scale, _) => MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(scale)),
+            child: child!,
+          ),
       title: 'SkiffBox',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -98,7 +105,7 @@ class SkiffApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const Shell(),
-    );
+    ));
   }
 }
 
