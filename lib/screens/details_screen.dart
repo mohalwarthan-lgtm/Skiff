@@ -517,6 +517,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
           ),
         ),
       ),
+      extendBodyBehindAppBar: true,
       body: Stack(fit: StackFit.expand, children: [
         if (bg != null)
           Image.network(bg,
@@ -537,7 +538,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
         Material(
           type: MaterialType.transparency,
           child: ListView(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.fromLTRB(18, kToolbarHeight + 26, 18, 18),
         children: [
           if (offline)
             Container(
