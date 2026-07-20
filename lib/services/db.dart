@@ -212,8 +212,50 @@ class Db {
         .where((p) =>
             p['watched'] != true &&
             ((p['position'] ?? 0) > 60 || ((p['pct'] ?? 0) as num) > 0))
-        .toList()
-      ..sort((a, b) => (b['updatedAt'] ?? 0).compareTo(a['updatedAt'] ?? 0));
+        .toList();
+    // Like Trakt's Continue Watching: also surface the NEXT unwatched,
+    // already-released episode of every show on the Watching shelf.
+    final present = {for (final r in rows) '${r['type']}|${r['itemId']}'};
+    for (final it in items.values.cast<Map>()) {
+      if (it['type'] != 'series' || it['status'] != 'watching') continue;
+      if (present.contains('series|${it['id']}')) continue;
+      final meta = cachedMeta('series', it['id']);
+      final vids = (meta?['videos'] as List? ?? [])
+          .whereType<Map>()
+          .where((v) => ((v['season'] as num?)?.toInt() ?? 0) > 0)
+          .toList()
+        ..sort((a, b) {
+          final sa = (a['season'] as num).toInt(),
+              sb = (b['season'] as num).toInt();
+          return sa != sb
+              ? sa - sb
+              : ((a['episode'] as num?)?.toInt() ?? 0) -
+                  ((b['episode'] as num?)?.toInt() ?? 0);
+        });
+      final anyWatched = vids
+          .any((v) => isWatched('series', it['id'], '${v['id']}'));
+      if (!anyWatched) continue; // not started - belongs on Home, not here
+      Map? next;
+      for (final v in vids) {
+        if (isWatched('series', it['id'], '${v['id']}')) continue;
+        final rel = DateTime.tryParse('${v['released'] ?? ''}');
+        if (rel != null && rel.isAfter(DateTime.now())) continue;
+        next = v;
+        break;
+      }
+      if (next == null) continue; // fully caught up
+      rows.add({
+        'itemId': it['id'],
+        'type': 'series',
+        'videoId': '${next['id']}',
+        'position': 0.0,
+        'pct': 0.0,
+        'upNext': true,
+        'updatedAt': it['updatedAt'] ?? 0,
+      });
+    }
+    rows.sort(
+        (a, b) => (b['updatedAt'] ?? 0).compareTo(a['updatedAt'] ?? 0));
     return rows.take(limit).map((p) {
       final it = item(p['type'], p['itemId']);
       final mc = cachedMeta(p['type'], p['itemId']);
