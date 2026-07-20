@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/profile.dart';
+import '../services/anilist.dart';
 import '../services/stremio.dart';
 import '../services/addons.dart';
 import '../config.dart';
@@ -21,9 +22,11 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? device;
   Timer? pollTimer;
-  String? traktNote, storageNote, profileNote, stremioNote, error;
+  String? traktNote, storageNote, profileNote, stremioNote, anilistNote,
+      error;
   late final stremioEmailCtrl = TextEditingController();
   late final stremioPassCtrl = TextEditingController();
+  late final anilistCtrl = TextEditingController();
   late final dirCtrl =
       TextEditingController(text: Db.setting('download_dir') ?? '');
   late final cacheCtrl =
@@ -38,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     cacheCtrl.dispose();
     stremioEmailCtrl.dispose();
     stremioPassCtrl.dispose();
+    anilistCtrl.dispose();
     super.dispose();
   }
 
@@ -308,6 +312,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(stremioNote!, style: hint)),
             ]),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text('ANILIST',
+            style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      'Pull your anime lists into the library (shelves '
+                      'only). Public lists need just your username.',
+                      style: hint),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: anilistCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'Username'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.tonal(
+                      onPressed: () async {
+                        final u = anilistCtrl.text.trim();
+                        if (u.isEmpty) return;
+                        setState(() =>
+                            anilistNote = 'Reading your AniList…');
+                        try {
+                          final msg = await Anilist.import(u);
+                          setState(() => anilistNote = msg);
+                        } catch (e) {
+                          setState(() => anilistNote = '$e');
+                        }
+                      },
+                      child: const Text('Pull library'),
+                    ),
+                  ]),
+                  if (anilistNote != null)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(anilistNote!, style: hint)),
+                ]),
           ),
         ),
         const SizedBox(height: 20),

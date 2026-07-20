@@ -302,13 +302,16 @@ class Trakt {
       syncStatus.value = 'Scrobble skipped — no Trakt mapping ($videoId)';
       return;
     }
+    await ensureFresh();
     final c = client()!;
     final res = await http.post(Uri.parse('$_api/scrobble/$action'),
         headers: _headers(c.$1, Db.setting('trakt_access')),
         body: jsonEncode(body));
     if (res.statusCode >= 300) {
+      final why = res.body.replaceAll('\n', ' ');
       syncStatus.value =
-          'Scrobble $action failed (HTTP ${res.statusCode})';
+          'Scrobble $action failed (HTTP ${res.statusCode}): '
+          '${why.length > 90 ? why.substring(0, 90) : why}';
     } else if (action != 'start') {
       syncStatus.value = 'Progress sent to Trakt ' + _clock();
     }
@@ -712,7 +715,7 @@ class Trakt {
       if (res.statusCode < 300) {
         for (final e in (jsonDecode(res.body) as List)) {
           final pct = (e['progress'] as num?)?.toDouble() ?? 0;
-          if (pct <= 0 || pct >= 97) continue;
+          if (pct <= 0 || pct >= 99) continue;
           final pausedAt = DateTime.tryParse('${e['paused_at'] ?? ''}');
           final at = pausedAt == null
               ? null
