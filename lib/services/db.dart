@@ -211,7 +211,7 @@ class Db {
         .cast<Map>()
         .where((p) =>
             p['watched'] != true &&
-            ((p['position'] ?? 0) > 60 || ((p['pct'] ?? 0) as num) >= 1))
+            ((p['position'] ?? 0) > 60 || ((p['pct'] ?? 0) as num) > 0))
         .toList()
       ..sort((a, b) => (b['updatedAt'] ?? 0).compareTo(a['updatedAt'] ?? 0));
     return rows.take(limit).map((p) {

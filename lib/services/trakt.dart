@@ -709,7 +709,8 @@ class Trakt {
       }
     }
     // Carry over partial positions watched elsewhere (Trakt playback).
-    var nPos = 0;
+    var nPos = 0, nSeen = 0;
+    final pcts = <String>[];
     try {
       final c2 = client()!;
       final h2 = _headers(c2.$1, Db.setting('trakt_access'));
@@ -717,7 +718,9 @@ class Trakt {
           await http.get(Uri.parse('$_api/sync/playback'), headers: h2);
       if (res.statusCode < 300) {
         for (final e in (jsonDecode(res.body) as List)) {
+          nSeen++;
           final pct = (e['progress'] as num?)?.toDouble() ?? 0;
+          if (pcts.length < 6) pcts.add(pct.toStringAsFixed(1));
           if (pct <= 0 || pct >= 99) continue;
           final pausedAt = DateTime.tryParse('${e['paused_at'] ?? ''}');
           final at = pausedAt == null
@@ -744,7 +747,8 @@ class Trakt {
 
     syncStatus.value = 'Synced at ' + _clock() +
         ' · ${shows.length} shows/$nSe seasons/$nEp episodes' +
-        (nPos > 0 ? ' · $nPos positions' : '');
+        ' · playback $nSeen seen/$nPos merged'
+        '${pcts.isEmpty ? '' : ' [${pcts.join('%, ')}%]'}';
     return 'Synced $nM movies, $nS shows, $nW watchlist items.';
   }
 }
