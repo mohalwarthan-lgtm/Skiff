@@ -43,9 +43,17 @@ class Anilist {
       for (final g in groups) {
         for (final it in (g['items'] as List? ?? [])) {
           if (it is! Map || '${it['type']}' != wantType) continue;
-          if (!_isAnimeId('${it['id']}')) continue; // anime only
+          // "Is this anime?" - answered by the METADATA, not the id
+          // dialect (with imdb-mode search, anime is tt-keyed too):
+          // anime-keyed id OR an Animation/Anime genre both count.
+          final gs = (it['genres'] as List? ?? [])
+              .map((g) => '$g'.toLowerCase())
+              .toList();
+          final animeSig = _isAnimeId('${it['id']}') ||
+              gs.any((g) => g.contains('anime')) ||
+              gs.contains('animation');
           final nm = _norm(it['name']);
-          var sc = 100;
+          var sc = animeSig ? 100 : 0;
           if (nm.isNotEmpty && (nm == rn || nm == en)) {
             sc += 60;
           } else if (_near(nm, rn) || _near(nm, en)) {
@@ -63,7 +71,10 @@ class Anilist {
       final alt = e['name'] == e['nameR'] ? e['nameE'] : e['nameR'];
       if ('$alt' != '${e['name']}') await tryQuery('$alt');
     }
-    return best;
+    // Accept: any anime-signalled candidate (>=100), or an exact-name
+    // match without genre info (60). A merely-similar name on a
+    // non-anime result (25) is never accepted.
+    return bestScore >= 60 ? best : null;
   }
 
   static Future<String> import(String username,
@@ -123,6 +134,7 @@ query ($name: String) {
     //         id the extension answers with ----
     final byId = <String, Map>{}; // resolved key -> aggregate
     var unmatched = 0;
+    final unmatchedNames = <String>[];
     for (var i = 0; i < entries.length; i += 4) {
       onProgress?.call(
           'Matching ${i + 1}–${(i + 4).clamp(0, entries.length)}'
@@ -137,6 +149,9 @@ query ($name: String) {
             } catch (_) {}
             if (hit == null) {
               unmatched++;
+              if (unmatchedNames.length < 3) {
+                unmatchedNames.add('${e['name']}');
+              }
               return;
             }
             final key = '$wantType|${hit['id']}';
@@ -195,7 +210,8 @@ query ($name: String) {
     }
     return 'Imported $added titles via your extension'
         '${merged > 0 ? ', $merged merged into existing entries' : ''}'
-        '${unmatched > 0 ? ', $unmatched not found by your add-ons' : ''}'
+        '${unmatched > 0 ? ', $unmatched not found by your add-ons'
+            ' (e.g. ${unmatchedNames.join(', ')})' : ''}'
         '${skipped > 0 ? ', $skipped dropped skipped' : ''}'
         ' — episode ticks fill in as the library catalogues.';
   }
