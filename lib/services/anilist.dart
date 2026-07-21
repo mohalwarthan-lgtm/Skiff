@@ -8,6 +8,27 @@ import 'db.dart';
 /// login. Shelves map: CURRENT/REPEATING/PAUSED -> Watching,
 /// PLANNING -> Plan, COMPLETED -> Completed, DROPPED skipped.
 class Anilist {
+  /// Community anime-id cross-reference: AniList -> (imdb, kitsu).
+  /// Fetched once per import (~13 MB), held in memory only.
+  static Future<Map<int, (String?, int?)>> _mapping() async {
+    final res = await http.get(Uri.parse(
+        'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json'));
+    if (res.statusCode >= 300) throw 'mapping unavailable';
+    final list = jsonDecode(res.body) as List;
+    final out = <int, (String?, int?)>{};
+    for (final m in list) {
+      if (m is! Map) continue;
+      final al = (m['anilist_id'] as num?)?.toInt();
+      if (al == null) continue;
+      final imdb = m['imdb_id'];
+      out[al] = (
+        imdb is String && imdb.startsWith('tt') ? imdb : null,
+        (m['kitsu_id'] as num?)?.toInt(),
+      );
+    }
+    return out;
+  }
+
   static Future<String> import(String username) async {
     const q = r'''
 query ($name: String) {
@@ -30,7 +51,14 @@ query ($name: String) {
     final data = jsonDecode(res.body);
     final lists = data?['data']?['MediaListCollection']?['lists'] as List?;
     if (lists == null) throw 'AniList: no lists found for "$username".';
-    var n = 0, skipped = 0;
+    // Translate into the ids the rest of the app speaks (imdb first,
+    // kitsu second) so imports are the SAME entity as your catalogs.
+    Map<int, (String?, int?)> idMap = const {};
+    var unmapped = 0;
+    try {
+      idMap = await _mapping();
+    } catch (_) {/* fall back to anilist ids */}
+    var n = 0, skipped = 0, healed = 0;
     for (final l in lists) {
       for (final e in (l['entries'] as List? ?? [])) {
         final shelf = switch ('${e['status']}') {
@@ -44,8 +72,27 @@ query ($name: String) {
           continue;
         }
         final m = e['media'] as Map? ?? const {};
-        final id = 'anilist:${m['id']}';
+        final alId = (m['id'] as num?)?.toInt() ?? 0;
+        final mp = idMap[alId];
+        final id = mp?.$1 ??
+            (mp?.$2 != null ? 'kitsu:${mp!.$2}' : 'anilist:$alId');
+        if (id == 'anilist:$alId' && idMap.isNotEmpty) unmapped++;
         final type = '${m['format']}' == 'MOVIE' ? 'movie' : 'series';
+        // Heal earlier imports: remove the alien-keyed duplicate this
+        // entry may have created before translation existed.
+        if (id != 'anilist:$alId') {
+          final ghost = '$type|anilist:$alId';
+          if (Db.items.get(ghost) != null) {
+            await Db.items.delete(ghost);
+            healed++;
+          }
+          for (final k in Db.progress.keys
+              .cast<String>()
+              .where((k) => k.contains('|anilist:$alId|'))
+              .toList()) {
+            await Db.progress.delete(k);
+          }
+        }
         final isNew = Db.itemStatus(type, id) == null;
         if (isNew) {
           Db.setStatus(type, id, shelf,
@@ -72,7 +119,10 @@ query ($name: String) {
         }
       }
     }
-    return 'Imported $n titles from AniList — episode progress fills in as the library loads their metadata'
+    return 'Imported $n titles'
+        '${healed > 0 ? ', removed $healed old duplicates' : ''}'
+        '${unmapped > 0 ? ', $unmapped without an id match' : ''}'
+        ' from AniList — episode progress fills in as the library loads their metadata'
         '${skipped > 0 ? ' ($skipped dropped/other skipped)' : ''}.';
   }
 }
