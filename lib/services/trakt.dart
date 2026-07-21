@@ -718,10 +718,20 @@ class Trakt {
     try {
       final c2 = client()!;
       final h2 = _headers(c2.$1, Db.setting('trakt_access'));
-      final res =
-          await http.get(Uri.parse('$_api/sync/playback'), headers: h2);
-      if (res.statusCode < 300) {
-        for (final e in (jsonDecode(res.body) as List)) {
+      // Trakt returns partial results on the bare endpoint - request
+      // each type explicitly and combine.
+      final list = <dynamic>[];
+      for (final t in ['episodes', 'movies']) {
+        final r = await http.get(
+            Uri.parse('$_api/sync/playback/$t?limit=200'),
+            headers: h2);
+        if (r.statusCode < 300) {
+          final b = jsonDecode(r.body);
+          if (b is List) list.addAll(b);
+        }
+      }
+      {
+        for (final e in list) {
           nSeen++;
           final pct = (e['progress'] as num?)?.toDouble() ?? 0;
           if (pcts.length < 6) pcts.add(pct.toStringAsFixed(1));
