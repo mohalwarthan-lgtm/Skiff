@@ -221,11 +221,11 @@ class _ShellState extends State<Shell> with WindowListener {
     return Scaffold(
       body: Row(
         children: [
-          NavigationRail(
-            selectedIndex: index,
-            onDestinationSelected: (i) => setState(() => index = i),
-            labelType: NavigationRailLabelType.all,
-            leading: Padding(
+          Container(
+            width: 104 * Db.uiScale.value,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Column(children: [
+              Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Column(children: [
                 Image.asset('assets/logo.png', width: 44),
@@ -238,9 +238,50 @@ class _ShellState extends State<Shell> with WindowListener {
                         letterSpacing: 2)),
               ]),
             ),
-            destinations: [
-              for (final d in _tabs) _dest(d.$1, d.$2),
-            ],
+              const SizedBox(height: 6),
+              // Box buttons: icon + label share one shape, and the hover
+              // highlight covers the whole thing - what you click is what
+              // lights up.
+              for (var i = 0; i < _tabs.length; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Material(
+                    color: index == i
+                        ? const Color(0x2235D6E8)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      hoverColor: const Color(0x1435D6E8),
+                      onTap: () => setState(() => index = i),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 10),
+                          child: Column(children: [
+                            Icon(_tabs[i].$1,
+                                weight: 300,
+                                fill: 0,
+                                size: 24 * Db.uiScale.value,
+                                color: index == i
+                                    ? const Color(0xFF35D6E8)
+                                    : Colors.white70),
+                            const SizedBox(height: 4),
+                            Text(_tabs[i].$2,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: index == i
+                                        ? const Color(0xFF35D6E8)
+                                        : Colors.white70)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
           ),
           const VerticalDivider(width: 1),
           Expanded(child: screens[index]),

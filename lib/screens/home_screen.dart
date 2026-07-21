@@ -123,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 for (final c in cont)
                   SizedBox(
-                    width: 140,
+                    width: 140 * Db.uiScale.value,
                     child: PosterCard(
                       poster: c['poster'],
                       title: c['name'] ?? c['itemId'],
@@ -164,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     for (final m in items.take(20))
                       SizedBox(
-                        width: 140,
+                        width: 140 * Db.uiScale.value,
                         child: PosterCard(
                           poster: m['poster'],
                           title: m['name'] ?? m['id'],

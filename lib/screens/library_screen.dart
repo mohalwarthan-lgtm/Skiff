@@ -243,7 +243,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
           ),
           SizedBox(
-            height: 250,
+            height: 250 * Db.uiScale.value,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -259,7 +259,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         : 'E${parts.last}')
                     : null;
                 return SizedBox(
-                  width: 140,
+                  width: 140 * Db.uiScale.value,
                   child: Stack(children: [
                     PosterCard(
                       poster: c['poster'],

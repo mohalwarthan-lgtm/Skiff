@@ -1,7 +1,7 @@
 name: skiffbox
 description: A Stremio-compatible media hub with real library management, Trakt sync, and offline downloads.
 publish_to: 'none'
-version: 1.5.20
+version: 1.5.21
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
