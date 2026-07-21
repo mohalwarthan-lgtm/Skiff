@@ -378,7 +378,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() =>
                             anilistNote = 'Reading your AniList…');
                         try {
-                          final msg = await Anilist.import(u);
+                          final msg = await Anilist.import(u,
+                              onProgress: (m) {
+                            if (mounted) setState(() => anilistNote = m);
+                          });
                           setState(() => anilistNote = msg);
                         } catch (e) {
                           setState(() => anilistNote = '$e');

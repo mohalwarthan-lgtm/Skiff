@@ -26,6 +26,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// and fill in names and posters as they arrive.
   int _hydDone = 0, _hydTotal = 0;
   String _q = '';
+  int _shown = 0;
 
   Future<void> _hydrateMissingMeta() async {
     if (_hydrating) return;
@@ -160,6 +161,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     items.sort((a, b) => '${a['name'] ?? ''}'
         .toLowerCase()
         .compareTo('${b['name'] ?? ''}'.toLowerCase()));
+    _shown = items.length;
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -167,11 +169,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
           child: TextField(
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
-              prefixIcon: Icon(Icons.search, size: 18),
+              prefixIcon: const Icon(Icons.search, size: 18),
               hintText: 'Search your library',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              suffixText: _q.isEmpty ? null : '$_shown shown',
+              suffixStyle:
+                  const TextStyle(fontSize: 12, color: Colors.white38),
             ),
             onChanged: (v) => setState(() => _q = v.trim()),
           ),
@@ -295,13 +300,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: Wrap(
             spacing: 8,
             children: [
+              // Clean chips; only the SELECTED one carries its count.
               ChoiceChip(
-                  label: const Text('All'),
+                  label: Text(tab == null
+                      ? 'All · ${Db.itemsByStatus(null).length}'
+                      : 'All'),
                   selected: tab == null,
                   onSelected: (_) => setState(() => tab = null)),
               for (final s in statuses)
                 ChoiceChip(
-                    label: Text(s.$2),
+                    label: Text(tab == s.$1
+                        ? '${s.$2} · ${Db.itemsByStatus(s.$1).length}'
+                        : s.$2),
                     selected: tab == s.$1,
                     onSelected: (_) => setState(() => tab = s.$1)),
             ],

@@ -13,7 +13,61 @@ import 'db.dart';
 /// AniList entries (per-season/cour) collapsing into one extension entity
 /// is expected and handled: shelves merge, episode counts sum.
 class Anilist {
-  static Future<String> import(String username) async {
+  static String _norm(Object? x) =>
+      '$x'.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
+
+  static bool _isAnimeId(String id) =>
+      id.startsWith('kitsu:') ||
+      id.startsWith('mal:') ||
+      id.startsWith('anilist:');
+
+  static bool _near(String a, String b) =>
+      a.isNotEmpty && b.isNotEmpty && (a.contains(b) || b.contains(a));
+
+  /// Find this AniList entry among the extension's own search results.
+  /// Rules, in order of authority: the result MUST be anime-keyed
+  /// (kitsu/mal) - a live-action namesake on an imdb id is never
+  /// accepted; names are verified against BOTH the romaji and english
+  /// titles; and if the first query finds nothing acceptable, the
+  /// alternate title is queried too (e.g. Ao Haru Ride / Blue Spring
+  /// Ride). Slow titles are given time - only a truly hung request
+  /// (30s) is abandoned.
+  static Future<Map?> _resolve(Map e, String wantType) async {
+    final rn = _norm(e['nameR']), en = _norm(e['nameE']);
+    Map? best;
+    var bestScore = 0;
+    Future<void> tryQuery(String q) async {
+      if (q.trim().isEmpty) return;
+      final groups = await Addons.searchGrouped(q)
+          .timeout(const Duration(seconds: 30));
+      for (final g in groups) {
+        for (final it in (g['items'] as List? ?? [])) {
+          if (it is! Map || '${it['type']}' != wantType) continue;
+          if (!_isAnimeId('${it['id']}')) continue; // anime only
+          final nm = _norm(it['name']);
+          var sc = 100;
+          if (nm.isNotEmpty && (nm == rn || nm == en)) {
+            sc += 60;
+          } else if (_near(nm, rn) || _near(nm, en)) {
+            sc += 25;
+          }
+          if (sc > bestScore) {
+            bestScore = sc;
+            best = it.cast<String, dynamic>();
+          }
+        }
+      }
+    }
+    await tryQuery('${e['name']}');
+    if (bestScore < 160) {
+      final alt = e['name'] == e['nameR'] ? e['nameE'] : e['nameR'];
+      if ('$alt' != '${e['name']}') await tryQuery('$alt');
+    }
+    return best;
+  }
+
+  static Future<String> import(String username,
+      {void Function(String)? onProgress}) async {
     const q = r'''
 query ($name: String) {
   MediaListCollection(userName: $name, type: ANIME) {
@@ -57,6 +111,8 @@ query ($name: String) {
           'progress': (e['progress'] as num?)?.toInt() ?? 0,
           'completed': shelf == 'completed',
           'name': m['title']?['english'] ?? m['title']?['romaji'] ?? '',
+          'nameR': m['title']?['romaji'] ?? '',
+          'nameE': m['title']?['english'] ?? '',
           'movie': '${m['format']}' == 'MOVIE',
           'poster': m['coverImage']?['large'],
         });
@@ -68,22 +124,16 @@ query ($name: String) {
     final byId = <String, Map>{}; // resolved key -> aggregate
     var unmatched = 0;
     for (var i = 0; i < entries.length; i += 4) {
+      onProgress?.call(
+          'Matching ${i + 1}–${(i + 4).clamp(0, entries.length)}'
+          ' of ${entries.length} with your extension…');
       await Future.wait([
         for (final e in entries.skip(i).take(4))
           () async {
             final wantType = e['movie'] == true ? 'movie' : 'series';
             Map? hit;
             try {
-              final groups = await Addons.searchGrouped('${e['name']}');
-              for (final g in groups) {
-                for (final it in (g['items'] as List? ?? [])) {
-                  if (it is Map && '${it['type']}' == wantType) {
-                    hit = it;
-                    break;
-                  }
-                }
-                if (hit != null) break;
-              }
+              hit = await _resolve(e, wantType);
             } catch (_) {}
             if (hit == null) {
               unmatched++;
