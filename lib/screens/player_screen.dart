@@ -153,6 +153,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Timer? _checkpoint;
+  bool _switching = false; // texture detached during fullscreen switch
 
   Future<void> _flushStop() async {
     try {
@@ -263,13 +264,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   Future<void> _toggleFullscreen() async {
-    if (!_desktop) return; // mobile builds are already full-window
+    if (!_desktop || _switching) return;
     fullscreen = !fullscreen;
-    // Changing window state from inside a pointer-event callstack can
-    // deadlock the Windows raster thread (frozen UI, live audio) - let
-    // the gesture fully finish first.
-    await Future.delayed(const Duration(milliseconds: 80));
+    // The Windows compositor can stall permanently if the video swapchain
+    // is presenting during the mode change (the telltale: one frame per
+    // resize, then stillness). Detach the texture for the blink of the
+    // switch so nothing presents while the window transforms.
+    setState(() => _switching = true);
+    await Future.delayed(const Duration(milliseconds: 60));
     await windowManager.setFullScreen(fullscreen);
+    await Future.delayed(const Duration(milliseconds: 180));
+    if (mounted) setState(() => _switching = false);
     if (mounted) setState(() {});
     // Windows can leave the video surface stale after the mode switch
     // (frozen picture, audio continues) - force a few frames.
@@ -560,7 +565,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onHover: (_) => _poke(),
           child: Stack(children: [
             Center(
-                child: controller == null
+                child: controller == null || _switching
                     ? const CircularProgressIndicator()
                     : Video(
                         controller: controller!,
