@@ -50,7 +50,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 // AniList import: turn the episodes-watched count into
                 // ticks on the show's REAL episode ids.
                 final n = (it['alProgress'] as num?)?.toInt() ?? 0;
-                if (n > 0) {
+                if (n != 0) {
                   final vids = (m['videos'] as List? ?? [])
                       .whereType<Map>()
                       .where((v) =>
@@ -64,7 +64,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           : ((a['episode'] as num?)?.toInt() ?? 0) -
                               ((b['episode'] as num?)?.toInt() ?? 0);
                     });
-                  for (final v in vids.take(n)) {
+                  final toTick = n == -1
+                      ? vids.where((v) {
+                          final rel = DateTime.tryParse(
+                              '${v['released'] ?? ''}');
+                          return rel == null ||
+                              !rel.isAfter(DateTime.now());
+                        }).toList()
+                      : vids.take(n).toList();
+                  for (final v in toTick) {
                     Db.markWatched(
                         it['type'], it['id'], '${v['id']}', true);
                   }

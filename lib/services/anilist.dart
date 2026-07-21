@@ -53,14 +53,22 @@ query ($name: String) {
           Db.touchItem(type, id, poster: m['coverImage']?['large']);
           n++;
         }
-        // Episodes-watched count: applied as real ticks once the show's
-        // episode list is known (library hydration).
+        // Episodes-watched count, applied as real ticks once the show's
+        // episode list is known (library hydration). Completed shows are
+        // stamped -1 = "every released episode", so Trakt receives the
+        // full history too.
         final prog = (e['progress'] as num?)?.toInt() ?? 0;
-        if (type == 'series' && prog > 0) {
-          final k = '$type|$id';
-          final rec = Map.of(Db.items.get(k) as Map);
-          rec['alProgress'] = prog;
-          await Db.items.put(k, rec);
+        if (type == 'series') {
+          final stamp = shelf == 'completed' ? -1 : prog;
+          if (stamp != 0) {
+            final k = '$type|$id';
+            final rec = Map.of(Db.items.get(k) as Map);
+            rec['alProgress'] = stamp;
+            await Db.items.put(k, rec);
+          }
+        } else if (shelf == 'completed') {
+          // Movies: the watched flag itself is the history entry.
+          Db.markWatched(type, id, id, true);
         }
       }
     }
