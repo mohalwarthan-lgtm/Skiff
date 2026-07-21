@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'screens/addons_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/player_screen.dart';
 import 'screens/discover_screen.dart';
 import 'screens/downloads_screen.dart';
 import 'screens/library_screen.dart';
@@ -48,6 +49,8 @@ Future<void> main() async {
   if (_isDesktop) {
     await windowManager.ensureInitialized(); // window control (fullscreen)
     await windowManager.setTitle('SkiffBox');
+    // Intercept close so a mid-episode position reaches Trakt first.
+    await windowManager.setPreventClose(true);
   }
   await _migrateOldSkiffData();
   await Db.init();
@@ -154,6 +157,16 @@ class _ShellState extends State<Shell> with WindowListener {
         () => WidgetsBinding.instance.scheduleForcedFrame());
     Future.delayed(const Duration(milliseconds: 250),
         () => WidgetsBinding.instance.scheduleForcedFrame());
+  }
+
+  @override
+  Future<void> onWindowClose() async {
+    // Flush the current playback position to Trakt, then really close.
+    try {
+      await (PlayerFlush.flush?.call() ?? Future.value())
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    await windowManager.destroy();
   }
 
   @override

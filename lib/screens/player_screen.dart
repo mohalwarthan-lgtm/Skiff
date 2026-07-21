@@ -11,6 +11,12 @@ import '../services/trakt.dart';
 
 /// Player. Audio-codec failures never block a playing video (banner +
 /// auto track switch); the full error panel only appears when truly stalled.
+/// Lets the app flush the current playback position to Trakt before the
+/// window closes (the process would otherwise die mid-request).
+class PlayerFlush {
+  static Future<void> Function()? flush;
+}
+
 class PlayerScreen extends StatefulWidget {
   final String url; // http(s) URL or local file path
   final String title;
@@ -79,6 +85,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _setMpv('cache-dir', cacheDir.trim());
     }
     player.stream.error.listen(_onEngineError);
+    PlayerFlush.flush = _flushStop;
+    // Checkpoint: refresh Trakt's position every few minutes while
+    // playing, so even a crash loses almost nothing.
+    _checkpoint = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (player.state.playing) {
+        Trakt.scrobble('start', widget.type, widget.itemId,
+                widget.videoId, _pct())
+            .catchError((_) {});
+      }
+    });
     player.stream.log.listen((l) {
       logs.add('${l.prefix}: ${l.text}');
       if (logs.length > 10) logs.removeAt(0);
@@ -136,6 +152,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _poke();
   }
 
+  Timer? _checkpoint;
+
+  Future<void> _flushStop() async {
+    try {
+      await Trakt.scrobble(
+          'stop', widget.type, widget.itemId, widget.videoId, _pct());
+    } catch (_) {}
+  }
+
   double _pct() {
     final dur = player.state.duration.inSeconds;
     if (dur == 0) return 0;
@@ -149,6 +174,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (pos > 0) {
       Db.setProgress(widget.type, widget.itemId, widget.videoId, pos, dur);
     }
+    _checkpoint?.cancel();
+    PlayerFlush.flush = null;
     Trakt.scrobble('stop', widget.type, widget.itemId, widget.videoId, _pct())
         .catchError((_) {});
     saveTimer?.cancel();
