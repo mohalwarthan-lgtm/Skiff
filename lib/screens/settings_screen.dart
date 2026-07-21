@@ -357,8 +357,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      'Pull your anime lists into the library (shelves '
-                      'only). Public lists need just your username.',
+                      'Pull your anime lists into the library — shelves '
+                      'and watched-episode progress. Public lists need '
+                      'just your username.',
                       style: hint),
                   const SizedBox(height: 10),
                   Row(children: [

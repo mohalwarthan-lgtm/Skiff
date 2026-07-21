@@ -30,17 +30,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final missing = Db.items.values
           .cast<Map>()
-          .where((it) => Db.cachedMeta(it['type'], it['id']) == null)
+          .where((it) =>
+              Db.cachedMeta(it['type'], it['id']) == null ||
+              it['alProgress'] != null)
           .toList();
       for (var i = 0; i < missing.length; i += 4) {
         await Future.wait([
           for (final it in missing.skip(i).take(4))
             () async {
               try {
-                final m = await Addons.metaFor(it['type'], it['id']);
-                Db.cacheMeta(it['type'], it['id'], m);
-                Db.touchItem(it['type'], it['id'],
-                    name: m['name'], poster: m['poster']);
+                var m = Db.cachedMeta(it['type'], it['id'])
+                    ?.cast<String, dynamic>();
+                if (m == null) {
+                  m = await Addons.metaFor(it['type'], it['id']);
+                  Db.cacheMeta(it['type'], it['id'], m);
+                  Db.touchItem(it['type'], it['id'],
+                      name: m['name'], poster: m['poster']);
+                }
+                // AniList import: turn the episodes-watched count into
+                // ticks on the show's REAL episode ids.
+                final n = (it['alProgress'] as num?)?.toInt() ?? 0;
+                if (n > 0) {
+                  final vids = (m['videos'] as List? ?? [])
+                      .whereType<Map>()
+                      .where((v) =>
+                          ((v['season'] as num?)?.toInt() ?? 0) > 0)
+                      .toList()
+                    ..sort((a, b) {
+                      final sa = (a['season'] as num).toInt(),
+                          sb = (b['season'] as num).toInt();
+                      return sa != sb
+                          ? sa - sb
+                          : ((a['episode'] as num?)?.toInt() ?? 0) -
+                              ((b['episode'] as num?)?.toInt() ?? 0);
+                    });
+                  for (final v in vids.take(n)) {
+                    Db.markWatched(
+                        it['type'], it['id'], '${v['id']}', true);
+                  }
+                  final k = '${it['type']}|${it['id']}';
+                  final rec = Map.of(Db.items.get(k) as Map)
+                    ..remove('alProgress');
+                  await Db.items.put(k, rec);
+                }
               } catch (_) {/* no capable add-on yet - retried next open */}
             }(),
         ]);

@@ -12,7 +12,7 @@ class Anilist {
     const q = r'''
 query ($name: String) {
   MediaListCollection(userName: $name, type: ANIME) {
-    lists { entries { status media {
+    lists { entries { status progress media {
       id format
       title { romaji english }
       coverImage { large }
@@ -46,15 +46,25 @@ query ($name: String) {
         final m = e['media'] as Map? ?? const {};
         final id = 'anilist:${m['id']}';
         final type = '${m['format']}' == 'MOVIE' ? 'movie' : 'series';
-        if (Db.itemStatus(type, id) == null) {
+        final isNew = Db.itemStatus(type, id) == null;
+        if (isNew) {
           Db.setStatus(type, id, shelf,
               name: m['title']?['english'] ?? m['title']?['romaji']);
           Db.touchItem(type, id, poster: m['coverImage']?['large']);
           n++;
         }
+        // Episodes-watched count: applied as real ticks once the show's
+        // episode list is known (library hydration).
+        final prog = (e['progress'] as num?)?.toInt() ?? 0;
+        if (type == 'series' && prog > 0) {
+          final k = '$type|$id';
+          final rec = Map.of(Db.items.get(k) as Map);
+          rec['alProgress'] = prog;
+          await Db.items.put(k, rec);
+        }
       }
     }
-    return 'Imported $n titles from AniList'
+    return 'Imported $n titles from AniList — episode progress fills in as the library loads their metadata'
         '${skipped > 0 ? ' ($skipped dropped/other skipped)' : ''}.';
   }
 }
