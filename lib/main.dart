@@ -84,24 +84,14 @@ class SkiffApp extends StatelessWidget {
     return ValueListenableBuilder<double>(
         valueListenable: Db.uiScale,
         builder: (context, scale, _) => MaterialApp(
-          builder: (context, child) {
-            // True UI zoom: lay out at a reduced virtual size, then scale
-            // the whole surface up - tiles, posters, text, everything.
-            if (scale <= 1.001) return child!;
-            final mq = MediaQuery.of(context);
-            return MediaQuery(
-              data: mq.copyWith(size: mq.size / scale),
-              child: Transform.scale(
-                scale: scale,
-                alignment: Alignment.topLeft,
-                child: SizedBox(
-                  width: mq.size.width / scale,
-                  height: mq.size.height / scale,
-                  child: child,
-                ),
-              ),
-            );
-          },
+          builder: (context, child) => MediaQuery(
+            // Scale by REFLOW, not magnification: text and controls grow
+            // via the text scaler, poster tiles via the grid (below) -
+            // layouts adapt instead of overflowing the window.
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(scale)),
+            child: child!,
+          ),
       title: 'SkiffBox',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

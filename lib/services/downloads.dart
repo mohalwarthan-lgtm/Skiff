@@ -63,6 +63,33 @@ class Downloads {
     Map<String, String> headers = const {},
     List<Map> subs = const [],
   }) async {
+    // Human names, not release filenames: if a title reads like a torrent
+    // name, rebuild it from the catalogued episode metadata - whoever the
+    // caller was.
+    final releaseish = RegExp(
+        r'(1080|2160|720|x26[45]|hevc|bluray|web.?dl|\.mkv|\.mp4|\[)',
+        caseSensitive: false);
+    final mc = Db.cachedMeta(type, itemId);
+    if (mc != null) {
+      if (releaseish.hasMatch(displayName) || displayName == itemId) {
+        displayName = '${mc['name'] ?? displayName}';
+      }
+      if (releaseish.hasMatch(videoTitle)) {
+        Map? v;
+        for (final x in (mc['videos'] as List? ?? [])) {
+          if (x is Map && '${x['id']}' == videoId) {
+            v = x;
+            break;
+          }
+        }
+        if (v != null) {
+          videoTitle = 'S${v['season']} E${v['episode']}'
+              '${v['name'] != null ? ' · ${v['name']}' : ''}';
+        } else if (type == 'movie') {
+          videoTitle = '';
+        }
+      }
+    }
     final k = key(type, itemId, videoId);
     if (active.containsKey(k)) return;
     final task = DownloadTask(k);

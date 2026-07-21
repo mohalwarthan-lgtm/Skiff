@@ -1,3 +1,4 @@
+import '../services/db.dart';
 import 'package:flutter/material.dart';
 
 class PosterCard extends StatefulWidget {
@@ -113,7 +114,10 @@ class PosterGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GridView.count(
         controller: controller,
-        crossAxisCount: (MediaQuery.of(context).size.width / 170).floor().clamp(2, 10),
+        crossAxisCount: (MediaQuery.of(context).size.width /
+                (170 * Db.uiScale.value))
+            .floor()
+            .clamp(2, 10),
         childAspectRatio: 0.58,
         mainAxisSpacing: 14,
         crossAxisSpacing: 14,
