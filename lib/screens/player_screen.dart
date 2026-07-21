@@ -41,7 +41,8 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen>
+    with WidgetsBindingObserver {
   late final Player player;
   VideoController? controller;
 
@@ -86,6 +87,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     player.stream.error.listen(_onEngineError);
     PlayerFlush.flush = _flushStop;
+    WidgetsBinding.instance.addObserver(this);
     // Checkpoint: refresh Trakt's position every few minutes while
     // playing, so even a crash loses almost nothing.
     _checkpoint = Timer.periodic(const Duration(minutes: 5), (_) {
@@ -155,6 +157,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _checkpoint;
   bool _switching = false; // texture detached during fullscreen switch
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Mobile equivalent of the desktop close-flush: the OS can kill a
+    // backgrounded app without warning, so save the position now.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      Trakt.scrobble('pause', widget.type, widget.itemId, widget.videoId,
+              _pct())
+          .catchError((_) {});
+    }
+  }
+
   Future<void> _flushStop() async {
     try {
       await Trakt.scrobble(
@@ -175,6 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (pos > 0) {
       Db.setProgress(widget.type, widget.itemId, widget.videoId, pos, dur);
     }
+    WidgetsBinding.instance.removeObserver(this);
     _checkpoint?.cancel();
     PlayerFlush.flush = null;
     Trakt.scrobble('stop', widget.type, widget.itemId, widget.videoId, _pct())
@@ -567,13 +582,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Center(
                 child: controller == null || _switching
                     ? const CircularProgressIndicator()
-                    : Video(
+                    // IgnorePointer: clicks must never reach the native
+                    // texture surface - the overlay owns all input.
+                    : IgnorePointer(
+                        child: Video(
                         controller: controller!,
                         controls: NoVideoControls,
                         // We paint subtitles ourselves below - full control
                         // over position and style on every platform.
                         subtitleViewConfiguration:
-                            const SubtitleViewConfiguration(visible: false))),
+                            const SubtitleViewConfiguration(
+                                visible: false)))),
             Center(
               child: StreamBuilder<bool>(
                 stream: player.stream.buffering,

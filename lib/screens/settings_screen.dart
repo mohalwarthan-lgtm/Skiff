@@ -322,17 +322,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Size — makes text and controls larger everywhere.',
+                  Text('Size — zooms the whole interface, tiles and all.',
                       style: hint),
                   ValueListenableBuilder<double>(
                     valueListenable: Db.uiScale,
                     builder: (context, v, _) => Row(children: [
                       Expanded(
                         child: Slider(
-                          value: v.clamp(0.9, 1.3),
-                          min: 0.9,
-                          max: 1.3,
-                          divisions: 8,
+                          value: v.clamp(1.0, 2.0),
+                          min: 1.0,
+                          max: 2.0,
+                          divisions: 10,
                           label: '${(v * 100).round()}%',
                           onChanged: (nv) {
                             Db.uiScale.value = nv;

@@ -84,11 +84,24 @@ class SkiffApp extends StatelessWidget {
     return ValueListenableBuilder<double>(
         valueListenable: Db.uiScale,
         builder: (context, scale, _) => MaterialApp(
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: TextScaler.linear(scale)),
-            child: child!,
-          ),
+          builder: (context, child) {
+            // True UI zoom: lay out at a reduced virtual size, then scale
+            // the whole surface up - tiles, posters, text, everything.
+            if (scale <= 1.001) return child!;
+            final mq = MediaQuery.of(context);
+            return MediaQuery(
+              data: mq.copyWith(size: mq.size / scale),
+              child: Transform.scale(
+                scale: scale,
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: mq.size.width / scale,
+                  height: mq.size.height / scale,
+                  child: child,
+                ),
+              ),
+            );
+          },
       title: 'SkiffBox',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -161,7 +174,11 @@ class _ShellState extends State<Shell> with WindowListener {
 
   @override
   Future<void> onWindowClose() async {
-    // Flush the current playback position to Trakt, then really close.
+    // Vanish instantly, flush the playback position to Trakt behind the
+    // scenes, then really exit - close feels immediate either way.
+    try {
+      await windowManager.hide();
+    } catch (_) {}
     try {
       await (PlayerFlush.flush?.call() ?? Future.value())
           .timeout(const Duration(seconds: 3));

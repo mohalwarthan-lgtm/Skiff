@@ -562,7 +562,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
         Material(
           type: MaterialType.transparency,
           child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, kToolbarHeight + 26, 18, 18),
+        padding: EdgeInsets.fromLTRB(
+            18,
+            kToolbarHeight + MediaQuery.paddingOf(context).top + 26,
+            18,
+            18),
         children: [
           if (offline)
             Container(
