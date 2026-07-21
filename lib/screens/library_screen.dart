@@ -25,6 +25,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// metadata yet — fetch it from the add-ons, a few titles at a time,
   /// and fill in names and posters as they arrive.
   int _hydDone = 0, _hydTotal = 0;
+  String _q = '';
 
   Future<void> _hydrateMissingMeta() async {
     if (_hydrating) return;
@@ -149,11 +150,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final cont = Db.continueWatching();
-    final items = Db.itemsByStatus(tab);
+    var items = Db.itemsByStatus(tab);
+    if (_q.isNotEmpty) {
+      final q = _q.toLowerCase();
+      items = items
+          .where((it) => '${it['name'] ?? ''}'.toLowerCase().contains(q))
+          .toList();
+    }
+    items.sort((a, b) => '${a['name'] ?? ''}'
+        .toLowerCase()
+        .compareTo('${b['name'] ?? ''}'.toLowerCase()));
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: TextField(
+            decoration: const InputDecoration(
+              isDense: true,
+              prefixIcon: Icon(Icons.search, size: 18),
+              hintText: 'Search your library',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) => setState(() => _q = v.trim()),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18),
           child: Row(children: [

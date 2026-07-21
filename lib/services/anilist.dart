@@ -2,33 +2,17 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'addons.dart';
 import 'db.dart';
 
-/// One-time AniList library import. Public GraphQL - just a username, no
-/// login. Shelves map: CURRENT/REPEATING/PAUSED -> Watching,
-/// PLANNING -> Plan, COMPLETED -> Completed, DROPPED skipped.
+/// AniList library import that speaks YOUR add-ons' language.
+///
+/// Every title is resolved by searching your own metadata extension and
+/// adopting whatever id it returns - so an imported show is, by
+/// construction, the exact same entity Home and search serve. Several
+/// AniList entries (per-season/cour) collapsing into one extension entity
+/// is expected and handled: shelves merge, episode counts sum.
 class Anilist {
-  /// Community anime-id cross-reference: AniList -> (imdb, kitsu).
-  /// Fetched once per import (~13 MB), held in memory only.
-  static Future<Map<int, (String?, int?)>> _mapping() async {
-    final res = await http.get(Uri.parse(
-        'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json'));
-    if (res.statusCode >= 300) throw 'mapping unavailable';
-    final list = jsonDecode(res.body) as List;
-    final out = <int, (String?, int?)>{};
-    for (final m in list) {
-      if (m is! Map) continue;
-      final al = (m['anilist_id'] as num?)?.toInt();
-      if (al == null) continue;
-      final imdb = m['imdb_id'];
-      out[al] = (
-        imdb is String && imdb.startsWith('tt') ? imdb : null,
-        (m['kitsu_id'] as num?)?.toInt(),
-      );
-    }
-    return out;
-  }
-
   static Future<String> import(String username) async {
     const q = r'''
 query ($name: String) {
@@ -51,14 +35,10 @@ query ($name: String) {
     final data = jsonDecode(res.body);
     final lists = data?['data']?['MediaListCollection']?['lists'] as List?;
     if (lists == null) throw 'AniList: no lists found for "$username".';
-    // Translate into the ids the rest of the app speaks (imdb first,
-    // kitsu second) so imports are the SAME entity as your catalogs.
-    Map<int, (String?, int?)> idMap = const {};
-    var unmapped = 0;
-    try {
-      idMap = await _mapping();
-    } catch (_) {/* fall back to anilist ids */}
-    var n = 0, skipped = 0, healed = 0;
+
+    // ---- 1. Flatten AniList entries we care about ----
+    final entries = <Map>[];
+    var skipped = 0;
     for (final l in lists) {
       for (final e in (l['entries'] as List? ?? [])) {
         final shelf = switch ('${e['status']}') {
@@ -72,69 +52,101 @@ query ($name: String) {
           continue;
         }
         final m = e['media'] as Map? ?? const {};
-        final alId = (m['id'] as num?)?.toInt() ?? 0;
-        final mp = idMap[alId];
-        // Kitsu FIRST: it's the id language this app's anime catalogs and
-        // search speak (and it matches AniList's per-season granularity).
-        // Imdb only as a fallback, anilist as a last resort.
-        final id = mp?.$2 != null
-            ? 'kitsu:${mp!.$2}'
-            : (mp?.$1 ?? 'anilist:$alId');
-        if (id == 'anilist:$alId' && idMap.isNotEmpty) unmapped++;
-        final type = '${m['format']}' == 'MOVIE' ? 'movie' : 'series';
-        // Heal earlier imports: collapse this entry's duplicates under
-        // other id dialects (anilist-keyed, imdb-keyed) into the one
-        // corrected identity - preserving any shelf you had put it on.
-        for (final gid in [
-          'anilist:$alId',
-          if (mp?.$1 != null && mp!.$1 != id) mp.$1!,
-        ]) {
-          final gkey = '$type|$gid';
-          final g = Db.items.get(gkey) as Map?;
-          if (g == null) continue;
-          if (Db.itemStatus(type, id) == null && g['status'] != null) {
-            Db.setStatus(type, id, g['status'], name: g['name']);
-            Db.touchItem(type, id, poster: g['poster']);
-          }
-          await Db.items.delete(gkey);
-          healed++;
-          for (final k in Db.progress.keys
-              .cast<String>()
-              .where((k) => k.contains('|$gid|'))
-              .toList()) {
-            await Db.progress.delete(k);
-          }
-        }
-        final isNew = Db.itemStatus(type, id) == null;
-        if (isNew) {
-          Db.setStatus(type, id, shelf,
-              name: m['title']?['english'] ?? m['title']?['romaji']);
-          Db.touchItem(type, id, poster: m['coverImage']?['large']);
-          n++;
-        }
-        // Episodes-watched count, applied as real ticks once the show's
-        // episode list is known (library hydration). Completed shows are
-        // stamped -1 = "every released episode", so Trakt receives the
-        // full history too.
-        final prog = (e['progress'] as num?)?.toInt() ?? 0;
-        if (type == 'series') {
-          final stamp = shelf == 'completed' ? -1 : prog;
-          if (stamp != 0) {
-            final k = '$type|$id';
-            final rec = Map.of(Db.items.get(k) as Map);
-            rec['alProgress'] = stamp;
-            await Db.items.put(k, rec);
-          }
-        } else if (shelf == 'completed') {
-          // Movies: the watched flag itself is the history entry.
-          Db.markWatched(type, id, id, true);
-        }
+        entries.add({
+          'shelf': shelf,
+          'progress': (e['progress'] as num?)?.toInt() ?? 0,
+          'completed': shelf == 'completed',
+          'name': m['title']?['english'] ?? m['title']?['romaji'] ?? '',
+          'movie': '${m['format']}' == 'MOVIE',
+          'poster': m['coverImage']?['large'],
+        });
       }
     }
-    return 'Imported $n titles'
-        '${healed > 0 ? ', removed $healed old duplicates' : ''}'
-        '${unmapped > 0 ? ', $unmapped without an id match' : ''}'
-        ' from AniList — episode progress fills in as the library loads their metadata'
-        '${skipped > 0 ? ' ($skipped dropped/other skipped)' : ''}.';
+
+    // ---- 2. Resolve each via YOUR extension's search; collapse by the
+    //         id the extension answers with ----
+    final byId = <String, Map>{}; // resolved key -> aggregate
+    var unmatched = 0;
+    for (var i = 0; i < entries.length; i += 4) {
+      await Future.wait([
+        for (final e in entries.skip(i).take(4))
+          () async {
+            final wantType = e['movie'] == true ? 'movie' : 'series';
+            Map? hit;
+            try {
+              final groups = await Addons.searchGrouped('${e['name']}');
+              for (final g in groups) {
+                for (final it in (g['items'] as List? ?? [])) {
+                  if (it is Map && '${it['type']}' == wantType) {
+                    hit = it;
+                    break;
+                  }
+                }
+                if (hit != null) break;
+              }
+            } catch (_) {}
+            if (hit == null) {
+              unmatched++;
+              return;
+            }
+            final key = '$wantType|${hit['id']}';
+            final agg = byId.putIfAbsent(
+                key,
+                () => {
+                      'type': wantType,
+                      'id': '${hit!['id']}',
+                      'name': hit['name'] ?? e['name'],
+                      'poster': hit['poster'] ?? e['poster'],
+                      'progressSum': 0,
+                      'anyWatching': false,
+                      'anyPlan': false,
+                      'allCompleted': true,
+                    });
+            agg['progressSum'] =
+                (agg['progressSum'] as int) + (e['progress'] as int);
+            if (e['shelf'] == 'watching') agg['anyWatching'] = true;
+            if (e['shelf'] == 'plan') agg['anyPlan'] = true;
+            if (e['completed'] != true) agg['allCompleted'] = false;
+          }()
+      ]);
+    }
+
+    // ---- 3. Write items + progress stamps ----
+    var added = 0, merged = 0;
+    for (final agg in byId.values) {
+      final type = agg['type'] as String, id = agg['id'] as String;
+      final allDone = agg['allCompleted'] == true;
+      final shelf = agg['anyWatching'] == true
+          ? 'watching'
+          : allDone
+              ? 'completed'
+              // mixed completed+plan means mid-franchise -> watching
+              : (agg['anyPlan'] == true && agg['progressSum'] == 0
+                  ? 'plan'
+                  : 'watching');
+      if (Db.itemStatus(type, id) == null) {
+        Db.setStatus(type, id, shelf, name: agg['name']);
+        Db.touchItem(type, id, poster: agg['poster']);
+        added++;
+      } else {
+        merged++; // already yours - shelf respected, progress still lands
+      }
+      if (type == 'movie') {
+        if (allDone) Db.markWatched(type, id, id, true);
+        continue;
+      }
+      final stamp = allDone ? -1 : (agg['progressSum'] as int);
+      if (stamp != 0) {
+        final k = '$type|$id';
+        final rec = Map.of(Db.items.get(k) as Map);
+        rec['alProgress'] = stamp;
+        await Db.items.put(k, rec);
+      }
+    }
+    return 'Imported $added titles via your extension'
+        '${merged > 0 ? ', $merged merged into existing entries' : ''}'
+        '${unmatched > 0 ? ', $unmatched not found by your add-ons' : ''}'
+        '${skipped > 0 ? ', $skipped dropped skipped' : ''}'
+        ' — episode ticks fill in as the library catalogues.';
   }
 }
