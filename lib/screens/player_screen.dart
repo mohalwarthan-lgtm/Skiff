@@ -608,7 +608,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   player.playOrPause();
                   _poke();
                 },
-                onDoubleTap: _toggleFullscreen,
+                onDoubleTap: () {
+                // Toggling the window from inside the double-click gesture
+                // desyncs Windows' pointer/raster handshake (frozen frames,
+                // live audio). Let the click sequence fully settle, then
+                // take the identical path the F key uses - which works.
+                Future.delayed(const Duration(milliseconds: 320),
+                    _toggleFullscreen);
+              },
               ),
             ),
             if (playerError != null)
