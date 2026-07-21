@@ -78,6 +78,13 @@ class DownloadsScreen extends StatelessWidget {
           groups.putIfAbsent('${d['type']}|${d['itemId']}', () => []).add(d);
         }
 
+        // The active tasks only know their key - look the human names up
+        // from the records written at download start.
+        final recByKey = {
+          for (final d in Downloads.all())
+            Downloads.key(d['type'], d['itemId'], d['videoId']): d
+        };
+
         return ListView(
           padding: const EdgeInsets.all(18),
           children: [
@@ -91,7 +98,16 @@ class DownloadsScreen extends StatelessWidget {
                 AnimatedBuilder(
                   animation: task,
                   builder: (_, __) => ListTile(
-                    title: Text(task.key.split('|').last),
+                    title: Text(() {
+                      final r = recByKey[task.key];
+                      if (r == null) return task.key.split('|').last;
+                      final vt = '${r['videoTitle'] ?? ''}';
+                      final nm = '${r['name'] ?? ''}';
+                      if (nm.isEmpty && vt.isEmpty) {
+                        return task.key.split('|').last;
+                      }
+                      return vt.isEmpty ? nm : '$nm — $vt';
+                    }()),
                     subtitle: task.progress >= 0
                         ? LinearProgressIndicator(value: task.progress)
                         : const LinearProgressIndicator(),
