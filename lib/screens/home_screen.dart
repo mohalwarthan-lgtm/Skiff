@@ -212,7 +212,7 @@ class _Row extends StatelessWidget {
         ]),
       ),
       SizedBox(
-        height: 248,
+        height: 248 * Db.uiScale.value,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 18),

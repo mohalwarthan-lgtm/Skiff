@@ -9,13 +9,14 @@ import 'net.dart';
 /// subtitle (.srt/.vtt) next to it, tracked in the Downloads tab.
 class DownloadTask extends ChangeNotifier {
   final String key;
+  final String label; // human name, known from the moment it starts
   double progress = 0; // 0..1, or -1 when size is unknown
   int received = 0;
   String status = 'downloading'; // downloading | done | error | cancelled
   String? error;
   bool _cancel = false;
 
-  DownloadTask(this.key);
+  DownloadTask(this.key, this.label);
   void cancel() => _cancel = true;
 }
 
@@ -100,7 +101,8 @@ class Downloads {
     }
     final k = key(type, itemId, videoId);
     if (active.containsKey(k)) return;
-    final task = DownloadTask(k);
+    final task = DownloadTask(
+        k, videoTitle.isEmpty ? displayName : '$displayName — $videoTitle');
     active[k] = task;
     revision.value++;
 

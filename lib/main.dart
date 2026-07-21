@@ -133,7 +133,8 @@ const _tabs = <(IconData, String)>[
 /// Thin icons; filled face only when selected.
 NavigationRailDestination _dest(IconData symbol, String label) =>
     NavigationRailDestination(
-      icon: Icon(symbol, weight: 300, fill: 0),
+      icon: Icon(symbol,
+          weight: 300, fill: 0, size: 24 * Db.uiScale.value),
       selectedIcon: Icon(symbol, weight: 400, fill: 1),
       label: Text(label),
     );
@@ -209,7 +210,8 @@ class _ShellState extends State<Shell> with WindowListener {
           destinations: [
             for (final d in _tabs)
               NavigationDestination(
-                  icon: Icon(d.$1, weight: 300, fill: 0),
+                  icon: Icon(d.$1,
+                      weight: 300, fill: 0, size: 24 * Db.uiScale.value),
                   selectedIcon: Icon(d.$1, weight: 400, fill: 1),
                   label: d.$2),
           ],
