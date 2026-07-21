@@ -69,12 +69,20 @@ class Downloads {
     final releaseish = RegExp(
         r'(1080|2160|720|x26[45]|hevc|bluray|web.?dl|\.mkv|\.mp4|\[)',
         caseSensitive: false);
+    // Raw ids (kitsu:46214:9, tt1234:1:2) are just as unreadable as
+    // release names - rebuild those too.
+    final idish = RegExp(r'^(tt\d|kitsu:|mal:|anilist:|tmdb:|tvdb:)');
     final mc = Db.cachedMeta(type, itemId);
     if (mc != null) {
-      if (releaseish.hasMatch(displayName) || displayName == itemId) {
+      if (releaseish.hasMatch(displayName) ||
+          displayName == itemId ||
+          idish.hasMatch(displayName)) {
         displayName = '${mc['name'] ?? displayName}';
       }
-      if (releaseish.hasMatch(videoTitle)) {
+      if (releaseish.hasMatch(videoTitle) ||
+          videoTitle.isEmpty ||
+          videoTitle == videoId ||
+          idish.hasMatch(videoTitle)) {
         Map? v;
         for (final x in (mc['videos'] as List? ?? [])) {
           if (x is Map && '${x['id']}' == videoId) {
