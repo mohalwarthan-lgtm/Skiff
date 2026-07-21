@@ -74,21 +74,33 @@ query ($name: String) {
         final m = e['media'] as Map? ?? const {};
         final alId = (m['id'] as num?)?.toInt() ?? 0;
         final mp = idMap[alId];
-        final id = mp?.$1 ??
-            (mp?.$2 != null ? 'kitsu:${mp!.$2}' : 'anilist:$alId');
+        // Kitsu FIRST: it's the id language this app's anime catalogs and
+        // search speak (and it matches AniList's per-season granularity).
+        // Imdb only as a fallback, anilist as a last resort.
+        final id = mp?.$2 != null
+            ? 'kitsu:${mp!.$2}'
+            : (mp?.$1 ?? 'anilist:$alId');
         if (id == 'anilist:$alId' && idMap.isNotEmpty) unmapped++;
         final type = '${m['format']}' == 'MOVIE' ? 'movie' : 'series';
-        // Heal earlier imports: remove the alien-keyed duplicate this
-        // entry may have created before translation existed.
-        if (id != 'anilist:$alId') {
-          final ghost = '$type|anilist:$alId';
-          if (Db.items.get(ghost) != null) {
-            await Db.items.delete(ghost);
-            healed++;
+        // Heal earlier imports: collapse this entry's duplicates under
+        // other id dialects (anilist-keyed, imdb-keyed) into the one
+        // corrected identity - preserving any shelf you had put it on.
+        for (final gid in [
+          'anilist:$alId',
+          if (mp?.$1 != null && mp!.$1 != id) mp.$1!,
+        ]) {
+          final gkey = '$type|$gid';
+          final g = Db.items.get(gkey) as Map?;
+          if (g == null) continue;
+          if (Db.itemStatus(type, id) == null && g['status'] != null) {
+            Db.setStatus(type, id, g['status'], name: g['name']);
+            Db.touchItem(type, id, poster: g['poster']);
           }
+          await Db.items.delete(gkey);
+          healed++;
           for (final k in Db.progress.keys
               .cast<String>()
-              .where((k) => k.contains('|anilist:$alId|'))
+              .where((k) => k.contains('|$gid|'))
               .toList()) {
             await Db.progress.delete(k);
           }

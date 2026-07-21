@@ -24,6 +24,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// A fresh device synced from Trakt has library ids but no local
   /// metadata yet — fetch it from the add-ons, a few titles at a time,
   /// and fill in names and posters as they arrive.
+  int _hydDone = 0, _hydTotal = 0;
+
   Future<void> _hydrateMissingMeta() async {
     if (_hydrating) return;
     _hydrating = true;
@@ -34,7 +36,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
               Db.cachedMeta(it['type'], it['id']) == null ||
               it['alProgress'] != null)
           .toList();
+      if (missing.isNotEmpty && mounted) {
+        setState(() {
+          _hydTotal = missing.length;
+          _hydDone = 0;
+        });
+      }
       for (var i = 0; i < missing.length; i += 4) {
+        if (mounted) setState(() => _hydDone = i);
         await Future.wait([
           for (final it in missing.skip(i).take(4))
             () async {
@@ -87,7 +96,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (mounted) setState(() {});
       }
     } finally {
-      _hydrating = false;
+      if (mounted) setState(() => _hydTotal = 0);
+    _hydrating = false;
     }
   }
 
@@ -150,6 +160,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
             const Text('Library',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
             const Spacer(),
+            // Cataloguing sweep: episode lists (and AniList ticks) being
+            // filled in - lets you see it's working, and when it's done.
+            if (_hydTotal > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Text(
+                  'Cataloguing $_hydDone/$_hydTotal…',
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white54),
+                ),
+              ),
             // Live Trakt sync status, so you can close the app knowing
             // whether your shelves made it to Trakt.
             ValueListenableBuilder<String>(
