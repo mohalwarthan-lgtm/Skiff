@@ -680,7 +680,11 @@ class Trakt {
                   name: e['show']?['title']);
             }
           }
-          await Db.meta.put(ckey, fingerprint);
+          // Only mark done if the episode map existed - otherwise retry
+          // next sync, after hydration has cached this show's metadata.
+          if (Db.cachedMeta('series', localId) != null) {
+            await Db.meta.put(ckey, fingerprint);
+          }
           nS++;
           continue;
         } catch (_) {/* fall back to inline data below */}

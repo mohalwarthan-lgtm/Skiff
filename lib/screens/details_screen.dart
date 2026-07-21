@@ -33,7 +33,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
       setState(() {
         meta = m;
         final seasons = _seasons(m);
-        season = seasons.firstWhere((s) => s > 0, orElse: () => seasons.isEmpty ? 1 : seasons.first);
+        season = _startingSeason(m, seasons);
       });
     }).catchError((e) {
       if (!mounted) return;
@@ -44,8 +44,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
           meta = cached.cast<String, dynamic>();
           offline = true;
           final seasons = _seasons(meta!);
-          season = seasons.firstWhere((s) => s > 0,
-              orElse: () => seasons.isEmpty ? 1 : seasons.first);
+          season = _startingSeason(meta!, seasons);
         });
       } else {
         setState(() => error = '$e');
@@ -212,6 +211,31 @@ class _DetailsScreenState extends State<DetailsScreen> {
       if (rt.$1 == typeLabel) return rt.$2.any(text.contains);
     }
     return true;
+  }
+
+  /// The season the viewer is "at": first unwatched, already-released
+  /// episode; falls back to the first season.
+  int _startingSeason(Map m, List<int> seasons) {
+    final vids = (m['videos'] as List? ?? [])
+        .whereType<Map>()
+        .where((v) => ((v['season'] as num?)?.toInt() ?? 0) > 0)
+        .toList()
+      ..sort((a, b) {
+        final sa = (a['season'] as num).toInt(),
+            sb = (b['season'] as num).toInt();
+        return sa != sb
+            ? sa - sb
+            : ((a['episode'] as num?)?.toInt() ?? 0) -
+                ((b['episode'] as num?)?.toInt() ?? 0);
+      });
+    for (final v in vids) {
+      if (Db.isWatched(widget.type, widget.id, '${v['id']}')) continue;
+      final rel = DateTime.tryParse('${v['released'] ?? ''}');
+      if (rel != null && rel.isAfter(DateTime.now())) continue;
+      return (v['season'] as num).toInt();
+    }
+    return seasons.firstWhere((x) => x > 0,
+        orElse: () => seasons.isEmpty ? 1 : seasons.first);
   }
 
   Future<void> _batchDownload(List eps) async {

@@ -238,6 +238,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _toggleFullscreen() async {
     if (!_desktop) return; // mobile builds are already full-window
     fullscreen = !fullscreen;
+    // Changing window state from inside a pointer-event callstack can
+    // deadlock the Windows raster thread (frozen UI, live audio) - let
+    // the gesture fully finish first.
+    await Future.delayed(const Duration(milliseconds: 80));
     await windowManager.setFullScreen(fullscreen);
     if (mounted) setState(() {});
     // Windows can leave the video surface stale after the mode switch
