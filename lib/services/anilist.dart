@@ -133,7 +133,7 @@ query ($name: String) {
     // ---- 2. Resolve each via YOUR extension's search; collapse by the
     //         id the extension answers with ----
     final byId = <String, Map>{}; // resolved key -> aggregate
-    var unmatched = 0;
+    var unmatched = 0, resolved = 0;
     final unmatchedNames = <String>[];
     for (var i = 0; i < entries.length; i += 4) {
       onProgress?.call(
@@ -149,11 +149,12 @@ query ($name: String) {
             } catch (_) {}
             if (hit == null) {
               unmatched++;
-              if (unmatchedNames.length < 3) {
+              if (unmatchedNames.length < 5) {
                 unmatchedNames.add('${e['name']}');
               }
               return;
             }
+            resolved++;
             final key = '$wantType|${hit['id']}';
             final agg = byId.putIfAbsent(
                 key,
@@ -208,10 +209,14 @@ query ($name: String) {
         await Db.items.put(k, rec);
       }
     }
-    return 'Imported $added titles via your extension'
-        '${merged > 0 ? ', $merged merged into existing entries' : ''}'
-        '${unmatched > 0 ? ', $unmatched not found by your add-ons'
-            ' (e.g. ${unmatchedNames.join(', ')})' : ''}'
+    final folded = resolved - byId.length;
+    return 'AniList: ${entries.length} entries read → '
+        '$added new titles, '
+        '$merged already in your library'
+        '${folded > 0 ? ', $folded season-entries folded into '
+            'franchise tiles' : ''}'
+        '${unmatched > 0 ? ', $unmatched not found by your add-ons '
+            '(${unmatchedNames.join(', ')})' : ''}'
         '${skipped > 0 ? ', $skipped dropped skipped' : ''}'
         ' — episode ticks fill in as the library catalogues.';
   }
