@@ -84,3 +84,27 @@ jobs:
         with:
           name: skiffbox-android
           path: build/app/outputs/flutter-apk/app-release.apk
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter config --enable-macos-desktop
+      - run: flutter create --platforms=macos .
+      - name: Allow network in the sandbox (both build modes)
+        run: |
+          for f in macos/Runner/DebugProfile.entitlements macos/Runner/Release.entitlements; do
+            /usr/libexec/PlistBuddy -c "Add :com.apple.security.network.client bool true" "$f" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :com.apple.security.network.client true" "$f"
+          done
+      - run: flutter pub get
+      - run: flutter build macos --release --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }} --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
+      - name: Zip the app bundle
+        run: ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/skiffbox.app skiffbox-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skiffbox-macos
+          path: skiffbox-macos.zip
