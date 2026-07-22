@@ -910,6 +910,7 @@ class _StreamSheetState extends State<_StreamSheet> {
           videoId: widget.videoId,
           headers: _headers(s),
           addonSubs: subs,
+          stream: s, // identity for the same-release Up Next ladder
         ),
       ));
       widget.onDone();

@@ -237,11 +237,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     final nid = '${nv['id']}';
     final label = 'S${nv['season']} E${nv['episode']}'
         '${nv['name'] != null ? ' · ${nv['name']}' : ''}';
-    List<Map> streams = const [];
+    // streamsFor returns addon wrappers {'addon', 'streams': [...]} -
+    // flatten to the actual streams.
+    final streams = <Map>[];
     try {
-      streams = (await Addons.streamsFor(widget.type, nid))
-          .whereType<Map>()
-          .toList();
+      for (final g in await Addons.streamsFor(widget.type, nid)) {
+        for (final st in (g['streams'] as List? ?? [])) {
+          if (st is Map) streams.add(st);
+        }
+      }
     } catch (_) {}
     Map? pick;
     final bg = widget.stream?['behaviorHints']?['bingeGroup'];
@@ -752,86 +756,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                     : const SizedBox.shrink(),
               ),
             ),
-            // ---- Skip intro (SkipDB) ----
-            if (_intro != null && !_introDismissed)
-              StreamBuilder<Duration>(
-                stream: player.stream.position,
-                builder: (context, snap) {
-                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
-                  if (ms < _intro!.$1 - 1000 || ms >= _intro!.$2) {
-                    return const SizedBox.shrink();
-                  }
-                  return Positioned(
-                    right: 24,
-                    bottom: 110,
-                    child: FilledButton.tonal(
-                      onPressed: () {
-                        player.seek(Duration(milliseconds: _intro!.$2));
-                        player.play(); // never let the tap layer pause us
-                        setState(() => _introDismissed = true);
-                      },
-                      child: const Text('Skip intro'),
-                    ),
-                  );
-                },
-              ),
-            // ---- Up next ----
-            if (_next != null && !_nextDismissed)
-              StreamBuilder<Duration>(
-                stream: player.stream.position,
-                builder: (context, snap) {
-                  final d = player.state.duration.inMilliseconds;
-                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
-                  // Crowd-marked outro start when known; 92% otherwise.
-                  final due = _outro != null
-                      ? ms >= _outro!.$1
-                      : (d > 0 && ms / d >= 0.92);
-                  if (!due) return const SizedBox.shrink();
-                  return Positioned(
-                    right: 24,
-                    bottom: 110,
-                    child: Material(
-                      color: const Color(0xE6141B26),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('Up next',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white54)),
-                              const SizedBox(height: 2),
-                              Text('${_next!['label']}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 8),
-                              Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    FilledButton(
-                                        onPressed: _playNext,
-                                        child: Text(_next!['url'] != null
-                                            ? 'Play next'
-                                            : 'Choose stream')),
-                                    const SizedBox(width: 8),
-                                    TextButton(
-                                        onPressed: () {
-                                          _nextTimer?.cancel();
-                                          setState(() =>
-                                              _nextDismissed = true);
-                                        },
-                                        child: const Text('Cancel')),
-                                  ]),
-                            ]),
-                      ),
-                    ),
-                  );
-                },
-              ),
 
             // Tap = pause/play, double tap = fullscreen
             Positioned.fill(
@@ -1038,6 +962,86 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ]),
               ),
             ),
+                      // ---- Skip intro (SkipDB) ----
+            if (_intro != null && !_introDismissed)
+              StreamBuilder<Duration>(
+                stream: player.stream.position,
+                builder: (context, snap) {
+                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
+                  if (ms < _intro!.$1 - 1000 || ms >= _intro!.$2) {
+                    return const SizedBox.shrink();
+                  }
+                  return Positioned(
+                    right: 24,
+                    bottom: 110,
+                    child: FilledButton.tonal(
+                      onPressed: () {
+                        player.seek(Duration(milliseconds: _intro!.$2));
+                        player.play(); // never let the tap layer pause us
+                        setState(() => _introDismissed = true);
+                      },
+                      child: const Text('Skip intro'),
+                    ),
+                  );
+                },
+              ),
+            // ---- Up next ----
+            if (_next != null && !_nextDismissed)
+              StreamBuilder<Duration>(
+                stream: player.stream.position,
+                builder: (context, snap) {
+                  final d = player.state.duration.inMilliseconds;
+                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
+                  // Crowd-marked outro start when known; 92% otherwise.
+                  final due = _outro != null
+                      ? ms >= _outro!.$1
+                      : (d > 0 && ms / d >= 0.92);
+                  if (!due) return const SizedBox.shrink();
+                  return Positioned(
+                    right: 24,
+                    bottom: 110,
+                    child: Material(
+                      color: const Color(0xE6141B26),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Up next',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white54)),
+                              const SizedBox(height: 2),
+                              Text('${_next!['label']}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    FilledButton(
+                                        onPressed: _playNext,
+                                        child: Text(_next!['url'] != null
+                                            ? 'Play next'
+                                            : 'Choose stream')),
+                                    const SizedBox(width: 8),
+                                    TextButton(
+                                        onPressed: () {
+                                          _nextTimer?.cancel();
+                                          setState(() =>
+                                              _nextDismissed = true);
+                                        },
+                                        child: const Text('Cancel')),
+                                  ]),
+                            ]),
+                      ),
+                    ),
+                  );
+                },
+              ),
           ]),
         ),
       ),
