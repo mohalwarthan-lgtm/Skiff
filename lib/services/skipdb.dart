@@ -73,7 +73,7 @@ class SkipDb {
           }
         }
       } catch (_) {}
-      if (mal != null) await Db.setSetting('mal|$kitsuId', mal);
+      if (mal != null) Db.setSetting('mal|$kitsuId', mal);
     }
     _malCache[kitsuId] = mal;
     return mal;
