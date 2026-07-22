@@ -513,6 +513,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   'Paste profile JSON here, or a path to the file'),
                         ),
                         actions: [
+                          // The proper citizen on sandboxed platforms
+                          // (macOS): a native picker GRANTS access to the
+                          // chosen file, where a typed path may be denied.
+                          TextButton(
+                              onPressed: () async {
+                                final f = await openFile(
+                                    acceptedTypeGroups: const [
+                                      XTypeGroup(
+                                          label: 'Profile',
+                                          extensions: ['json'])
+                                    ]);
+                                if (f != null) {
+                                  ctrl.text = await f.readAsString();
+                                }
+                              },
+                              child: const Text('Browse…')),
                           TextButton(
                               onPressed: () => Navigator.pop(context, false),
                               child: const Text('Cancel')),
