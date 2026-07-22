@@ -341,8 +341,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       SizedBox(
-                          width: 56,
-                          child: Text('${(v * 100).round()}%')),
+                          width: 64,
+                          child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child:
+                                  Text('${(v * 100).round()}%'))),
                     ]),
                   ),
                 ]),

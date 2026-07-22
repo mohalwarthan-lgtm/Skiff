@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
+import '../services/addons.dart';
 import '../services/db.dart';
+import '../services/skipdb.dart';
 import '../services/net.dart';
 import '../services/trakt.dart';
 
@@ -24,6 +26,7 @@ class PlayerScreen extends StatefulWidget {
   final Map<String, String> headers;
   final List<Map> addonSubs; // [{url, lang, id?}]
   final List<Map> localSubs; // [{path, lang}] for offline playback
+  final Map? stream; // chosen stream (bingeGroup, labels)
 
   const PlayerScreen({
     super.key,
@@ -32,6 +35,7 @@ class PlayerScreen extends StatefulWidget {
     required this.type,
     required this.itemId,
     required this.videoId,
+    this.stream,
     this.headers = const {},
     this.addonSubs = const [],
     this.localSubs = const [],
@@ -86,6 +90,31 @@ class _PlayerScreenState extends State<PlayerScreen>
       _setMpv('cache-dir', cacheDir.trim());
     }
     player.stream.error.listen(_onEngineError);
+    // A volume you set is a preference, not a per-episode whim.
+    final vol = double.tryParse(Db.setting('volume') ?? '');
+    if (vol != null) player.setVolume(vol.clamp(0, 100));
+    // Let mpv render subtitles natively - honoring ASS positioning
+    // (top-of-screen signs, background voices) as authored.
+    try {
+      (player.platform as dynamic).setProperty('sub-visibility', 'yes');
+    } catch (_) {}
+    SkipDb.intro(widget.type, widget.itemId, widget.videoId).then((v) {
+      if (mounted && v != null) setState(() => _intro = v);
+    });
+    SkipDb.outro(widget.type, widget.itemId, widget.videoId).then((v) {
+      if (mounted && v != null) setState(() => _outro = v);
+    });
+    player.stream.position.listen((pos) {
+      final d = player.state.duration.inMilliseconds;
+      final ms = pos.inMilliseconds;
+      final ready = _outro != null
+          ? ms >= _outro!.$1 - 60000 // a minute before credits roll
+          : (d > 0 && ms / d >= 0.85);
+      if (ready && !_nextPrefetched && widget.type == 'series') {
+        _nextPrefetched = true;
+        _prepareNext();
+      }
+    });
     PlayerFlush.flush = _flushStop;
     WidgetsBinding.instance.addObserver(this);
     // Checkpoint: refresh Trakt's position every few minutes while
@@ -155,6 +184,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Timer? _checkpoint;
+  (int, int)? _intro; // SkipDB intro window (ms)
+  (int, int)? _outro; // SkipDB outro window (ms)
+  bool _introDismissed = false;
+  Map? _next; // next episode: videoId/label/url/stream
+  bool _nextPrefetched = false, _nextDismissed = false;
+  Timer? _nextTimer;
+  int _nextCountdown = 8;
   bool _switching = false; // texture detached during fullscreen switch
 
   @override
@@ -176,6 +212,120 @@ class _PlayerScreenState extends State<PlayerScreen>
     } catch (_) {}
   }
 
+  /// Decide the next episode and its stream - the same-release ladder:
+  /// bingeGroup match, then quality tokens, then best instant option,
+  /// else hand back to the picker.
+  Future<void> _prepareNext() async {
+    final mc = Db.cachedMeta(widget.type, widget.itemId);
+    final vids = (mc?['videos'] as List? ?? [])
+        .whereType<Map>()
+        .where((v) => ((v['season'] as num?)?.toInt() ?? 0) > 0)
+        .toList()
+      ..sort((a, b) {
+        final sa = (a['season'] as num).toInt(),
+            sb = (b['season'] as num).toInt();
+        return sa != sb
+            ? sa - sb
+            : ((a['episode'] as num?)?.toInt() ?? 0) -
+                ((b['episode'] as num?)?.toInt() ?? 0);
+      });
+    final i = vids.indexWhere((v) => '${v['id']}' == widget.videoId);
+    if (i < 0 || i + 1 >= vids.length) return;
+    final nv = vids[i + 1];
+    final rel = DateTime.tryParse('${nv['released'] ?? ''}');
+    if (rel != null && rel.isAfter(DateTime.now())) return;
+    final nid = '${nv['id']}';
+    final label = 'S${nv['season']} E${nv['episode']}'
+        '${nv['name'] != null ? ' · ${nv['name']}' : ''}';
+    List<Map> streams = const [];
+    try {
+      streams = (await Addons.streamsFor(widget.type, nid))
+          .whereType<Map>()
+          .toList();
+    } catch (_) {}
+    Map? pick;
+    final bg = widget.stream?['behaviorHints']?['bingeGroup'];
+    if (bg != null) {
+      for (final st in streams) {
+        if (st['behaviorHints']?['bingeGroup'] == bg &&
+            st['url'] != null) {
+          pick = st;
+          break;
+        }
+      }
+    }
+    pick ??= _sameQuality(streams);
+    if (pick == null) {
+      for (final st in streams) {
+        if (st['url'] != null &&
+            st['behaviorHints']?['notWebReady'] != true) {
+          pick = st;
+          break;
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() => _next = {
+          'videoId': nid,
+          'label': label,
+          if (pick != null) 'url': pick['url'],
+          if (pick != null) 'stream': pick,
+        });
+  }
+
+  Map? _sameQuality(List<Map> streams) {
+    final cur =
+        '${widget.stream?['name'] ?? ''} ${widget.stream?['title'] ?? ''}'
+            .toLowerCase();
+    const toks = [
+      'remux', 'bluray', 'bdrip', 'web-dl', 'webdl', 'webrip', 'hdtv',
+      '2160', '1080', '720'
+    ];
+    final want = toks.where(cur.contains).toList();
+    if (want.isEmpty) return null;
+    for (final st in streams) {
+      final t = '${st['name'] ?? ''} ${st['title'] ?? ''}'.toLowerCase();
+      if (want.every(t.contains) && st['url'] != null) return st;
+    }
+    return null;
+  }
+
+  void _armNextTimer() {
+    if (_nextTimer != null) return;
+    _nextTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_nextCountdown <= 1) {
+        _playNext();
+      } else {
+        setState(() => _nextCountdown--);
+      }
+    });
+  }
+
+  void _playNext() {
+    final n = _next;
+    _nextTimer?.cancel();
+    _nextTimer = null;
+    if (n == null) return;
+    if (n['url'] == null) {
+      // No confident same-release pick - back to the episode list,
+      // where the picker keeps you in charge.
+      Navigator.pop(context);
+      return;
+    }
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => PlayerScreen(
+                  url: '${n['url']}',
+                  title: '${n['label']}',
+                  type: widget.type,
+                  itemId: widget.itemId,
+                  videoId: '${n['videoId']}',
+                  stream: n['stream'] as Map?,
+                )));
+  }
+
   double _pct() {
     final dur = player.state.duration.inSeconds;
     if (dur == 0) return 0;
@@ -190,6 +340,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       Db.setProgress(widget.type, widget.itemId, widget.videoId, pos, dur);
     }
     WidgetsBinding.instance.removeObserver(this);
+    _nextTimer?.cancel();
     _checkpoint?.cancel();
     PlayerFlush.flush = null;
     Trakt.scrobble('stop', widget.type, widget.itemId, widget.videoId, _pct())
@@ -601,30 +752,87 @@ class _PlayerScreenState extends State<PlayerScreen>
                     : const SizedBox.shrink(),
               ),
             ),
-            // Custom subtitle overlay; shows a preview line while styling.
-            StreamBuilder<List<String>>(
-              stream: player.stream.subtitle,
-              builder: (_, snap) {
-                var text = (snap.data ?? const <String>[])
-                    .where((l) => l.trim().isNotEmpty)
-                    .join('\n');
-                if (stylePreview && text.isEmpty) {
-                  text = 'Subtitle preview — drag the sliders';
-                }
-                if (text.isEmpty) return const SizedBox.shrink();
-                return IgnorePointer(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                          left: 24, right: 24, bottom: subBottom),
-                      child: Text(text,
-                          textAlign: TextAlign.center, style: _subStyle),
+            // ---- Skip intro (SkipDB) ----
+            if (_intro != null && !_introDismissed)
+              StreamBuilder<Duration>(
+                stream: player.stream.position,
+                builder: (context, snap) {
+                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
+                  if (ms < _intro!.$1 - 1000 || ms >= _intro!.$2) {
+                    return const SizedBox.shrink();
+                  }
+                  return Positioned(
+                    right: 24,
+                    bottom: 110,
+                    child: FilledButton.tonal(
+                      onPressed: () {
+                        player.seek(Duration(milliseconds: _intro!.$2));
+                        setState(() => _introDismissed = true);
+                      },
+                      child: const Text('Skip intro'),
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+            // ---- Up next ----
+            if (_next != null && !_nextDismissed)
+              StreamBuilder<Duration>(
+                stream: player.stream.position,
+                builder: (context, snap) {
+                  final d = player.state.duration.inMilliseconds;
+                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
+                  // Crowd-marked outro start when known; 92% otherwise.
+                  final due = _outro != null
+                      ? ms >= _outro!.$1
+                      : (d > 0 && ms / d >= 0.92);
+                  if (!due) return const SizedBox.shrink();
+                  _armNextTimer();
+                  return Positioned(
+                    right: 24,
+                    bottom: 110,
+                    child: Material(
+                      color: const Color(0xE6141B26),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Up next',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white54)),
+                              const SizedBox(height: 2),
+                              Text('${_next!['label']}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    FilledButton(
+                                        onPressed: _playNext,
+                                        child: Text(_next!['url'] != null
+                                            ? 'Play · ${_nextCountdown}s'
+                                            : 'Choose stream')),
+                                    const SizedBox(width: 8),
+                                    TextButton(
+                                        onPressed: () {
+                                          _nextTimer?.cancel();
+                                          setState(() =>
+                                              _nextDismissed = true);
+                                        },
+                                        child: const Text('Cancel')),
+                                  ]),
+                            ]),
+                      ),
+                    ),
+                  );
+                },
+              ),
+
             // Tap = pause/play, double tap = fullscreen
             Positioned.fill(
               child: GestureDetector(
@@ -808,7 +1016,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     builder: (_, s) => Slider(
                                       value: (s.data ?? 100).clamp(0, 100),
                                       max: 100,
-                                      onChanged: (v) => player.setVolume(v),
+                                      onChanged: (v) {
+                                        player.setVolume(v);
+                                        Db.setSetting('volume', v.toString());
+                                      },
                                     ),
                                   ),
                                 ),

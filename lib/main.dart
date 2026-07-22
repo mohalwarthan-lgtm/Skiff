@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
@@ -46,6 +47,13 @@ final bool _isDesktop =
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!_isDesktop) {
+    // Phones/TV: this app is a landscape experience.
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
   if (_isDesktop) {
     await windowManager.ensureInitialized(); // window control (fullscreen)
     await windowManager.setTitle('SkiffBox');
