@@ -72,8 +72,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   // thing actually painting the text; mpv properties do not affect it).
   late double subSize =
       double.tryParse(Db.setting('sub_size') ?? '') ?? 44;
-  late double subBottom =
-      double.tryParse(Db.setting('sub_bottom') ?? '') ?? 40;
   late double subOutline =
       double.tryParse(Db.setting('sub_outline') ?? '') ?? 2;
   late double subBg = double.tryParse(Db.setting('sub_bg') ?? '') ?? 0;
@@ -98,6 +96,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     try {
       (player.platform as dynamic).setProperty('sub-visibility', 'yes');
     } catch (_) {}
+    _applySubStyle();
     SkipDb.intro(widget.type, widget.itemId, widget.videoId).then((v) {
       if (mounted && v != null) setState(() => _intro = v);
     });
@@ -306,7 +305,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  void _playNext() {
+  Future<void> _playNext() async {
     final n = _next;
     _nextTimer?.cancel();
     _nextTimer = null;
@@ -317,6 +316,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       Navigator.pop(context);
       return;
     }
+    // Continuity: the next episode deserves everything the first one
+    // had - its own addon subtitles and the stream's request headers.
+    final subs = await Addons.subtitlesFor(widget.type, '${n['videoId']}')
+        .catchError((_) => <Map>[]);
+    final ph = (n['stream'] as Map?)?['behaviorHints']?['proxyHeaders']
+        ?['request'];
+    final headers = ph is Map
+        ? ph.map((k, v) => MapEntry('$k', '$v'))
+        : <String, String>{};
+    if (!mounted) return;
     Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -326,6 +335,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                   type: widget.type,
                   itemId: widget.itemId,
                   videoId: '${n['videoId']}',
+                  headers: headers,
+                  addonSubs: subs,
                   stream: n['stream'] as Map?,
                 )));
   }
@@ -620,6 +631,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     } catch (_) {/* property API unavailable on this backend */}
   }
 
+  /// Push the user's subtitle style into mpv's native renderer.
+  /// sub-ass-override=yes applies size/outline/box to ASS subs while
+  /// KEEPING authored positioning (top signs, background voices).
+  void _applySubStyle() {
+    _setMpv('sub-ass-override', 'yes');
+    _setMpv('sub-font-size', '${(subSize * 1.25).round()}');
+    _setMpv('sub-border-size', subOutline.toStringAsFixed(1));
+    final a = (subBg * 2.55).round().clamp(0, 255);
+    _setMpv('sub-back-color',
+        '#${a.toRadixString(16).padLeft(2, '0')}000000');
+  }
+
   TextStyle get _subStyle => TextStyle(
         fontSize: subSize,
         height: 1.35,
@@ -664,6 +687,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   onChanged: (v) {
                     assign(v);
                     Db.setSetting(key, v.toStringAsFixed(1));
+                    _applySubStyle(); // live on the video, natively
                     setD(() {});
                     setState(() {}); // live-preview on the video
                   },
@@ -677,8 +701,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             content: Column(mainAxisSize: MainAxisSize.min, children: [
               row('Size', subSize, 20, 80, 30, 'sub_size',
                   (v) => subSize = v),
-              row('Position', subBottom, 0, 300, 60, 'sub_bottom',
-                  (v) => subBottom = v),
               row('Outline', subOutline, 0, 5, 10, 'sub_outline',
                   (v) => subOutline = v,
                   fmt: (v) => v.toStringAsFixed(1)),
@@ -962,7 +984,29 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ]),
               ),
             ),
-                      // ---- Skip intro (SkipDB) ----
+                      // ---- Skip-data whisper (first seconds only): settles
+            // "feature broken vs data absent" at a glance ----
+            if (widget.type == 'series')
+              StreamBuilder<Duration>(
+                stream: player.stream.position,
+                builder: (context, snap) {
+                  final ms = (snap.data ?? Duration.zero).inMilliseconds;
+                  if (ms <= 0 || ms > 8000) {
+                    return const SizedBox.shrink();
+                  }
+                  return Positioned(
+                    top: 14,
+                    right: 18,
+                    child: Text(
+                      'skip data · intro ${_intro != null ? '✓' : '–'}'
+                      ' · outro ${_outro != null ? '✓' : '–'}',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white38),
+                    ),
+                  );
+                },
+              ),
+            // ---- Skip intro (SkipDB) ----
             if (_intro != null && !_introDismissed)
               StreamBuilder<Duration>(
                 stream: player.stream.position,
