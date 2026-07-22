@@ -38,14 +38,73 @@ class SkipDb {
   }
 
   static Future<(int, int)?> intro(
-          String type, String itemId, String videoId) =>
-      _segment(const {'intro'}, type, itemId, videoId);
+          String type, String itemId, String videoId) async =>
+      await _segment(const {'intro'}, type, itemId, videoId) ??
+      await _aniskip('op', videoId);
 
   /// Outro/credits start-end - lets Up Next fire exactly when the
   /// episode is really over, not at a guessed percentage.
   static Future<(int, int)?> outro(
-          String type, String itemId, String videoId) =>
-      _segment(const {'outro', 'credits', 'ending'}, type, itemId, videoId);
+          String type, String itemId, String videoId) async =>
+      await _segment(
+              const {'outro', 'credits', 'ending'}, type, itemId, videoId) ??
+      await _aniskip('ed', videoId);
+
+  // ---------- Aniskip: the anime crowd database (OP/ED, MAL-keyed) ----
+  static final _malCache = <String, String?>{};
+
+  /// kitsu series id -> MAL id, via Kitsu's own mapping API (cached).
+  static Future<String?> _malFor(String kitsuId) async {
+    if (_malCache.containsKey(kitsuId)) return _malCache[kitsuId];
+    String? mal = Db.setting('mal|$kitsuId');
+    if (mal == null) {
+      try {
+        final res = await http
+            .get(Uri.parse(
+                'https://kitsu.io/api/edge/anime/$kitsuId/mappings'))
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode < 300) {
+          for (final m in (jsonDecode(res.body)['data'] as List? ?? [])) {
+            if ('${m['attributes']?['externalSite']}' ==
+                'myanimelist/anime') {
+              mal = '${m['attributes']?['externalId']}';
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+      if (mal != null) await Db.setSetting('mal|$kitsuId', mal);
+    }
+    _malCache[kitsuId] = mal;
+    return mal;
+  }
+
+  /// Aniskip op/ed window for a kitsu-keyed episode. Both Kitsu and
+  /// Aniskip number per-entry, so no season translation is needed.
+  static Future<(int, int)?> _aniskip(String kind, String videoId) async {
+    final p = videoId.split(':');
+    if (p.length < 3 || p.first != 'kitsu') return null;
+    final mal = await _malFor(p[1]);
+    final ep = int.tryParse(p[2]);
+    if (mal == null || ep == null) return null;
+    try {
+      final res = await http
+          .get(Uri.parse('https://api.aniskip.com/v2/skip-times/$mal/$ep'
+              '?types[]=$kind&episodeLength=0'))
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode >= 300) return null;
+      final data = jsonDecode(res.body);
+      for (final r in (data['results'] as List? ?? [])) {
+        if ('${r['skipType']}' == kind) {
+          final iv = r['interval'] as Map? ?? const {};
+          final a = (((iv['startTime'] ?? 0) as num) * 1000).toInt();
+          final b = (((iv['endTime'] ?? 0) as num) * 1000).toInt();
+          if (b > a) return (a, b);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
 
   /// (startMs, endMs) of the requested segment kind, or null.
   static Future<(int, int)?> _segment(Set<String> kinds, String type,
