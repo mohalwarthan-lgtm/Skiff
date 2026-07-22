@@ -142,14 +142,20 @@ NavigationRailDestination _dest(IconData symbol, String label) =>
 class _ShellState extends State<Shell> with WindowListener {
   int index = 0;
 
+  void _onScale() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    // The sidebar and rows read the UI scale - rebuild the shell the
+    // moment the slider moves, not on the next incidental click.
+    Db.uiScale.addListener(_onScale);
     if (_isDesktop) windowManager.addListener(this);
   }
 
   @override
   void dispose() {
+    Db.uiScale.removeListener(_onScale);
     if (_isDesktop) windowManager.removeListener(this);
     super.dispose();
   }
@@ -174,7 +180,12 @@ class _ShellState extends State<Shell> with WindowListener {
       await (PlayerFlush.flush?.call() ?? Future.value())
           .timeout(const Duration(seconds: 3));
     } catch (_) {}
-    await windowManager.destroy();
+    try {
+      await windowManager.destroy();
+    } catch (_) {}
+    // The one guarantee that beats every teardown quirk: no hidden
+    // zombie processes lingering in Task Manager.
+    exit(0);
   }
 
   @override
@@ -284,7 +295,12 @@ class _ShellState extends State<Shell> with WindowListener {
             ]),
           ),
           const VerticalDivider(width: 1),
-          Expanded(child: screens[index]),
+          Expanded(
+              // Remount on scale change so every screen re-lays-out
+              // immediately (scroll position resets - acceptable).
+              child: KeyedSubtree(
+                  key: ValueKey('scale-${Db.uiScale.value}'),
+                  child: screens[index])),
         ],
       ),
     );
