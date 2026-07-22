@@ -54,7 +54,8 @@ class SkipDb {
     try {
       final r = await Trakt.resolveVideo(type, itemId, videoId);
       if (r == null || r.$2 == null || r.$3 == null) return null;
-      final t = await Trakt.toTraktNumbering(r.$1, r.$2!, r.$3!);
+      final t = await Trakt.toTraktNumbering(
+          r.$1, type, itemId, r.$2!, r.$3!);
       final imdb = r.$1;
       final se = t.$1, ep = t.$2;
       await _ensure();
