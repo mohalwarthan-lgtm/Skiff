@@ -108,8 +108,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       final d = player.state.duration.inMilliseconds;
       final ms = pos.inMilliseconds;
       final ready = _outro != null
-          ? ms >= _outro!.$1 - 60000 // a minute before credits roll
-          : (d > 0 && ms / d >= 0.85);
+          ? ms >= _outro!.$1 - 300000 // scout well before credits
+          : (d > 0 && ms / d >= 0.60);
       if (ready && !_nextPrefetched && widget.type == 'series') {
         _nextPrefetched = true;
         _prepareNext();
@@ -767,6 +767,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     child: FilledButton.tonal(
                       onPressed: () {
                         player.seek(Duration(milliseconds: _intro!.$2));
+                        player.play(); // never let the tap layer pause us
                         setState(() => _introDismissed = true);
                       },
                       child: const Text('Skip intro'),
@@ -786,7 +787,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ? ms >= _outro!.$1
                       : (d > 0 && ms / d >= 0.92);
                   if (!due) return const SizedBox.shrink();
-                  _armNextTimer();
                   return Positioned(
                     right: 24,
                     bottom: 110,
@@ -815,7 +815,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     FilledButton(
                                         onPressed: _playNext,
                                         child: Text(_next!['url'] != null
-                                            ? 'Play · ${_nextCountdown}s'
+                                            ? 'Play next'
                                             : 'Choose stream')),
                                     const SizedBox(width: 8),
                                     TextButton(
