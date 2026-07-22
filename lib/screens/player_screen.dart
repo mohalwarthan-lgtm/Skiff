@@ -114,7 +114,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _prepareNext();
       }
     });
-    PlayerFlush.flush = _flushStop;
+    PlayerFlush.flush = _flushRef;
     WidgetsBinding.instance.addObserver(this);
     // Checkpoint: refresh Trakt's position every few minutes while
     // playing, so even a crash loses almost nothing.
@@ -182,6 +182,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _poke();
   }
 
+  late final Future<void> Function() _flushRef = _flushStop;
   Timer? _checkpoint;
   (int, int)? _intro; // SkipDB intro window (ms)
   (int, int)? _outro; // SkipDB outro window (ms)
@@ -357,7 +358,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.removeObserver(this);
     _nextTimer?.cancel();
     _checkpoint?.cancel();
-    PlayerFlush.flush = null;
+    // pushReplacement disposes the OLD screen after the NEW one has
+    // registered - only clear the hook if it is still ours.
+    if (identical(PlayerFlush.flush, _flushRef)) PlayerFlush.flush = null;
     Trakt.scrobble('stop', widget.type, widget.itemId, widget.videoId, _pct())
         .catchError((_) {});
     saveTimer?.cancel();
@@ -641,6 +644,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     final a = (subBg * 2.55).round().clamp(0, 255);
     _setMpv('sub-back-color',
         '#${a.toRadixString(16).padLeft(2, '0')}000000');
+    // ASS subtitles ignore sub-back-color; the box needs a libass style
+    // override. Alpha is inverted in libass (&H00=opaque, FF=clear).
+    if (subBg > 0) {
+      final la = (255 - a)
+          .clamp(0, 255)
+          .toRadixString(16)
+          .padLeft(2, '0')
+          .toUpperCase();
+      _setMpv('sub-ass-force-style',
+          'BorderStyle=4,BackColour=&H${la}000000&');
+    } else {
+      _setMpv('sub-ass-force-style', '');
+    }
   }
 
   TextStyle get _subStyle => TextStyle(
