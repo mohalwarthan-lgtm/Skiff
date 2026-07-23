@@ -130,6 +130,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     });
     PlayerFlush.flush = _flushRef;
+    // Phones/TV: video owns the screen - hide status and nav bars.
+    if (!_desktop) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
     WidgetsBinding.instance.addObserver(this);
     // Checkpoint: refresh Trakt's position every few minutes while
     // playing, so even a crash loses almost nothing.
@@ -499,6 +503,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       Db.setProgress(widget.type, widget.itemId, widget.videoId, pos, dur);
     }
     WidgetsBinding.instance.removeObserver(this);
+    if (!_desktop) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     _nextTimer?.cancel();
     _checkpoint?.cancel();
     // pushReplacement disposes the OLD screen after the NEW one has
@@ -616,8 +623,22 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onKey(KeyEvent e) {
     if (e is! KeyDownEvent) return;
     final k = e.logicalKey;
-    if (k == LogicalKeyboardKey.space) {
+    // A TV remote sends select/media keys, not a keyboard's.
+    if (k == LogicalKeyboardKey.space ||
+        k == LogicalKeyboardKey.select ||
+        k == LogicalKeyboardKey.enter ||
+        k == LogicalKeyboardKey.numpadEnter ||
+        k == LogicalKeyboardKey.mediaPlayPause ||
+        k == LogicalKeyboardKey.mediaPlay ||
+        k == LogicalKeyboardKey.mediaPause) {
       player.playOrPause();
+    } else if (k == LogicalKeyboardKey.mediaFastForward) {
+      player.seek(player.state.position + const Duration(seconds: 30));
+    } else if (k == LogicalKeyboardKey.mediaRewind) {
+      final t = player.state.position - const Duration(seconds: 30);
+      player.seek(t.isNegative ? Duration.zero : t);
+    } else if (k == LogicalKeyboardKey.mediaStop) {
+      Navigator.of(context).pop();
     } else if (k == LogicalKeyboardKey.arrowRight) {
       player.seek(player.state.position + const Duration(seconds: 10));
     } else if (k == LogicalKeyboardKey.arrowLeft) {

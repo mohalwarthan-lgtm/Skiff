@@ -93,6 +93,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   @override
+  void dispose() {
+    scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(

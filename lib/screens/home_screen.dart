@@ -71,6 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openDetails(String type, String id) async {
     await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => DetailsScreen(type: type, id: id)));
+    if (!mounted) return;
     setState(() {});
   }
 

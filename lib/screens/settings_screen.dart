@@ -42,6 +42,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     stremioEmailCtrl.dispose();
     stremioPassCtrl.dispose();
     anilistCtrl.dispose();
+    idCtrl.dispose();
+    secretCtrl.dispose();
     super.dispose();
   }
 
@@ -57,12 +59,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Db.setSetting('trakt_client_secret', secretCtrl.text.trim());
       }
       final d = await Trakt.deviceCode();
+      if (!mounted) return;
       setState(() => device = d);
       final expires = DateTime.now().add(Duration(seconds: d['expires_in']));
       pollTimer = Timer.periodic(
           Duration(seconds: (d['interval'] as int) + 1), (t) async {
         if (DateTime.now().isAfter(expires)) {
           t.cancel();
+          if (!mounted) return;
           setState(() {
             device = null;
             error = 'The code expired before it was approved. Try again.';
@@ -72,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         try {
           if (await Trakt.pollToken(d['device_code'])) {
             t.cancel();
+            if (!mounted) return;
             setState(() {
               device = null;
               traktNote = 'Connected — importing your Trakt history…';
@@ -116,6 +121,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             setState(() => traktNote = 'Syncing…');
                             final msg =
                                 await Trakt.pullAll().catchError((e) => '$e');
+                            if (!mounted) return;
                             setState(() => traktNote = msg);
                           },
                           child: const Text('Sync now')),
@@ -148,12 +154,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             setState(() => traktNote = 'Cleaning up Trakt…');
                             final msg = await Trakt.mirrorLocal()
                                 .catchError((e) => 'Cleanup failed: ' + '$e');
+                            if (!mounted) return;
                             setState(() => traktNote = msg);
                           },
                           child: const Text('Clean up Trakt')),
                       TextButton(
                           onPressed: () {
                             Trakt.disconnect();
+                            if (!mounted) return;
                             setState(() {});
                           },
                           child: const Text('Disconnect')),
@@ -281,6 +289,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     setState(() => stremioNote = 'Signing in to Stremio…');
                     try {
                       final key = await Stremio.login(email, pass);
+                      if (!mounted) return;
                       setState(
                           () => stremioNote = 'Reading add-on collection…');
                       final urls = await Stremio.addonUrls(key);
@@ -296,6 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }
                       }
                       stremioPassCtrl.clear();
+                      if (!mounted) return;
                       setState(() => stremioNote =
                           'Imported $installed add-on(s) from Stremio' +
                               (failed > 0 ? ' ($failed failed)' : '') +
@@ -428,6 +438,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (dir != null && dir.isNotEmpty) {
                       dirCtrl.text = dir;
                       Db.setSetting('download_dir', dir);
+                      if (!mounted) return;
                       setState(() => storageNote = 'New downloads will go to ' + dir);
                     }
                   },
@@ -456,6 +467,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (dir != null && dir.isNotEmpty) {
                       cacheCtrl.text = dir;
                       Db.setSetting('cache_dir', dir);
+                      if (!mounted) return;
                       setState(() =>
                           storageNote = 'Streaming cache will use ' + dir);
                     }
@@ -493,6 +505,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final path = await Profile.exportToFile();
                       await Clipboard.setData(
                           ClipboardData(text: Profile.exportJson()));
+                      if (!mounted) return;
                       setState(() =>
                           profileNote = 'Profile saved to $path (and copied to clipboard).');
                     } catch (e) {
@@ -542,11 +555,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                     );
+                    final payload = ctrl.text;
+                    ctrl.dispose(); // the dialog is gone; so is its field
                     if (ok == true) {
                       try {
-                        final msg = await Profile.import(ctrl.text);
+                        final msg = await Profile.import(payload);
+                        if (!mounted) return;
                         setState(() => profileNote = msg);
                       } catch (e) {
+                        if (!mounted) return;
                         setState(() => error = '$e');
                       }
                     }

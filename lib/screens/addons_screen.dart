@@ -26,6 +26,12 @@ class _AddonsScreenState extends State<AddonsScreen> {
   }
 
   @override
+  void dispose() {
+    urlCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final addons = Addons.installed();
     return ListView(

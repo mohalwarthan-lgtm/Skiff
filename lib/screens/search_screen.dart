@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../services/db.dart';
 import '../services/addons.dart';
 import 'details_screen.dart';
 import 'widgets.dart';
@@ -26,6 +28,12 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() => groups = null);
     final g = await Addons.searchGrouped(q);
     if (mounted) setState(() => groups = g);
+  }
+
+  @override
+  void dispose() {
+    ctrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -66,7 +74,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             ]),
                       ),
                       SizedBox(
-                        height: 232,
+                        height: 232 * Db.uiScale.value,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -74,7 +82,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           itemBuilder: (context, i) {
                             final m = (g['items'] as List)[i] as Map;
                             return SizedBox(
-                              width: 128,
+                              width: 128 * Db.uiScale.value,
                               child: Padding(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 4),

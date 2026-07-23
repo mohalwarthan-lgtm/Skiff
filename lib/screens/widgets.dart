@@ -23,6 +23,7 @@ class PosterCard extends StatefulWidget {
 
 class _PosterCardState extends State<PosterCard> {
   bool _hover = false;
+  bool _focused = false; // D-pad focus (TV)
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +37,9 @@ class _PosterCardState extends State<PosterCard> {
   Widget _card(BuildContext context) {
     return InkWell(
       onTap: widget.onTap,
+      // A remote's focus should feel like a mouse hover, and needs a
+      // visible ring - there is no cursor on a television.
+      onFocusChange: (f) => setState(() => _focused = f),
       borderRadius: BorderRadius.circular(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -47,7 +51,9 @@ class _PosterCardState extends State<PosterCard> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                     width: 1.4,
-                    color: Colors.transparent),
+                    color: _focused
+                        ? const Color(0xFF35D6E8)
+                        : Colors.transparent),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(9),
@@ -57,7 +63,7 @@ class _PosterCardState extends State<PosterCard> {
                   transformAlignment: Alignment.center,
                   // Zoom-tilt INSIDE the clip: nothing can overflow the
                   // grid cell, so no cropped shadows or titles.
-                  transform: _hover
+                  transform: (_hover || _focused)
                       ? (Matrix4.identity()
                         ..setEntry(3, 2, 0.0015)
                         ..rotateX(-0.03)

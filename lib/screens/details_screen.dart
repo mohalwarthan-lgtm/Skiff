@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../config.dart';
 import '../services/addons.dart';
 import '../services/db.dart';
 import '../services/downloads.dart';

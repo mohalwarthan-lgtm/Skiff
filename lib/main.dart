@@ -210,6 +210,16 @@ class _ShellState extends State<Shell> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
+    // A scale that suits a 27" monitor makes a phone unusable (and used
+    // to arrive with an imported profile). Cap it by physical room.
+    final shortest = MediaQuery.of(context).size.shortestSide;
+    final cap = shortest < 420 ? 1.0 : (shortest < 600 ? 1.2 : 2.0);
+    if (Db.uiScale.value > cap) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Db.uiScale.value = cap;
+        Db.setSetting('ui_scale', cap.toString());
+      });
+    }
     final screens = const [
       HomeScreen(),
       LibraryScreen(),
@@ -243,7 +253,10 @@ class _ShellState extends State<Shell> with WindowListener {
           Container(
             width: 104 * Db.uiScale.value,
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Column(children: [
+            // Landscape phones are short: without this the last tabs
+            // (Settings included) are unreachable.
+            child: SingleChildScrollView(
+                child: Column(children: [
               Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Column(children: [
@@ -272,6 +285,9 @@ class _ShellState extends State<Shell> with WindowListener {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
                       hoverColor: const Color(0x1435D6E8),
+                      // A remote needs somewhere to land on launch.
+                      autofocus: index == i,
+                      focusColor: const Color(0x3335D6E8),
                       onTap: () => setState(() => index = i),
                       child: SizedBox(
                         width: double.infinity,
@@ -300,7 +316,7 @@ class _ShellState extends State<Shell> with WindowListener {
                     ),
                   ),
                 ),
-            ]),
+            ])),
           ),
           const VerticalDivider(width: 1),
           Expanded(

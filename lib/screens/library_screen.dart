@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../config.dart';
 import '../services/db.dart';
 import '../services/addons.dart';
 import '../services/trakt.dart';
@@ -122,6 +121,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _open(String type, String id) async {
     await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => DetailsScreen(type: type, id: id)));
+    if (!mounted) return;
     setState(() {});
   }
 

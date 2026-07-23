@@ -7,8 +7,10 @@ import 'db.dart';
 /// Portable profile: add-on URLs, library, progress, settings, and Trakt
 /// login in one JSON file. Device-specific paths and downloads stay local.
 class Profile {
-  /// Paths are per-device; they never travel inside a profile.
-  static const _deviceKeys = {'download_dir', 'cache_dir'};
+  /// Per-device settings; they never travel inside a profile. Interface
+  /// scale belongs here too: a value that suits a desktop monitor wrecks
+  /// a phone's layout.
+  static const _deviceKeys = {'download_dir', 'cache_dir', 'ui_scale'};
 
   static String exportJson() => jsonEncode({
         'version': 2,
