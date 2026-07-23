@@ -120,9 +120,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         _chaptersTried = true;
         _chapterFallback(d);
       }
-      final ready = _outro != null
-          ? ms >= _outro!.$1 - 300000 // scout well before credits
-          : (d > 0 && ms / d >= 0.60);
+      // Baseline always applies; a known credits point can only pull
+      // these EARLIER, never delay them.
+      final ready = (d > 0 && ms / d >= 0.60) ||
+          (_outro != null && ms >= _outro!.$1 - 300000);
       if (ready && !_nextPrefetched && widget.type == 'series') {
         _nextPrefetched = true;
         _prepareNext();
@@ -247,41 +248,65 @@ class _PlayerScreenState extends State<PlayerScreen>
             double.tryParse('${await p.getProperty('chapter-list/$i/time')}') ??
                 -1);
       }
-      final introRe =
-          RegExp(r'\b(intro|opening|op|ncop|avant)\b', caseSensitive: false);
-      final outroRe = RegExp(
-          r'\b(outro|ending|credits|endcard|ed|nced|preview|next episode)\b',
+      // Detect by SHAPE, not vocabulary: chapter names vary by release
+      // group and language, but an opening is ~90s early in the episode
+      // and the credits are a long block in the last stretch. Names only
+      // break ties.
+      final introRe = RegExp(r'(intro|opening|\bop\b|ncop|avant)',
+          caseSensitive: false);
+      final outroRe = RegExp(r'(outro|ending|credit|\bed\b|nced)',
           caseSensitive: false);
       int endOf(int i) =>
           ((i + 1 < n && times[i + 1] > times[i]) ? times[i + 1] * 1000 : durMs)
               .toInt();
 
       if (_intro == null) {
+        int? best;
+        var bestScore = -1e9;
         for (var i = 0; i < n; i++) {
-          if (times[i] < 0 || !introRe.hasMatch(titles[i])) continue;
+          if (times[i] < 0) continue;
           final a = (times[i] * 1000).toInt(), b = endOf(i);
-          if (b - a < 5000 || b - a > 240000) continue; // sanity
-          if (mounted) {
-            setState(() {
-              _intro = (a, b);
-              _introFrom = 'chapters';
-            });
+          final len = b - a;
+          if (a > durMs * 0.35) continue; // openings live up front
+          if (len < 45000 || len > 150000) continue; // ~90s, give or take
+          // closeness to a canonical 90s opening, plus a name hint
+          var score = -((len - 90000).abs() / 1000).toDouble();
+          if (introRe.hasMatch(titles[i])) score += 60;
+          if (score > bestScore) {
+            bestScore = score;
+            best = i;
           }
-          break;
+        }
+        if (best != null && mounted) {
+          setState(() {
+            _intro = ((times[best!] * 1000).toInt(), endOf(best!));
+            _introFrom = 'chapters';
+          });
         }
       }
+
       if (_outro == null) {
-        for (var i = n - 1; i >= 0; i--) {
-          if (times[i] < 0 || !outroRe.hasMatch(titles[i])) continue;
+        int? best;
+        var bestScore = -1e9;
+        for (var i = 0; i < n; i++) {
+          if (times[i] < 0) continue;
           final a = (times[i] * 1000).toInt();
-          if (a < durMs ~/ 2) continue; // credits belong to the tail
-          if (mounted) {
-            setState(() {
-              _outro = (a, endOf(i));
-              _outroFrom = 'chapters';
-            });
+          // credits start in the last stretch - and never so late that
+          // announcing the next episode would be pointless
+          if (a < durMs * 0.70 || a > durMs * 0.96) continue;
+          if (durMs - a < 45000) continue;
+          var score = -(a / 1000).toDouble(); // earliest qualifying wins
+          if (outroRe.hasMatch(titles[i])) score += 600;
+          if (score > bestScore) {
+            bestScore = score;
+            best = i;
           }
-          break;
+        }
+        if (best != null && mounted) {
+          setState(() {
+            _outro = ((times[best!] * 1000).toInt(), endOf(best!));
+            _outroFrom = 'chapters';
+          });
         }
       }
     } catch (_) {/* backend doesn't expose properties - fine */}
@@ -1172,10 +1197,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                 builder: (context, snap) {
                   final d = player.state.duration.inMilliseconds;
                   final ms = (snap.data ?? Duration.zero).inMilliseconds;
-                  // Crowd-marked outro start when known; 92% otherwise.
-                  final due = _outro != null
-                      ? ms >= _outro!.$1
-                      : (d > 0 && ms / d >= 0.92);
+                  // 92% is the guaranteed floor; a known credits start
+                  // only ever brings the card forward.
+                  final due = (d > 0 && ms / d >= 0.92) ||
+                      (_outro != null && ms >= _outro!.$1);
                   if (!due) return const SizedBox.shrink();
                   return Positioned(
                     right: 24,

@@ -37,7 +37,12 @@ class Skips {
         p[2],
       ]);
     }
-    return _introdb(p);
+    final segs = await _segments(p[0], p[1], p[2]);
+    if (segs['intro'] != null) {
+      lastLookup = 'introdb seg ${p[0]} s${p[1]} e${p[2]}';
+      return segs['intro'];
+    }
+    return _introdb(p); // legacy intro-only route
   }
 
   /// Credits/ending window - lets Up Next fire when the episode really
@@ -52,8 +57,8 @@ class Skips {
     }
     if (p.length < 3 || !p[0].startsWith('tt')) return null;
     final mal = await _malForImdb(type, itemId, p[0], p[1]);
-    if (mal == null) return null; // IntroDB exposes intros only
-    return _aniskip('ed', ['mal', mal, p[2]]);
+    if (mal != null) return _aniskip('ed', ['mal', mal, p[2]]);
+    return (await _segments(p[0], p[1], p[2]))['outro'];
   }
 
   /// Two tiers, cheapest first:
@@ -72,6 +77,67 @@ class Skips {
   }
 
   // ---------------- IntroDB (everything that isn't anime) ----------------
+
+  /// One /segments call per episode, reused for intro and outro.
+  static final _segCache = <String, Map<String, (int, int)>>{};
+
+  static int? _ms(Object? v) => v is num ? v.toInt() : null;
+
+  static int? _sec(Object? v) {
+    if (v is num) return (v * 1000).round();
+    if (v is String) {
+      if (v.contains(':')) {
+        var total = 0;
+        for (final part in v.split(':')) {
+          total = total * 60 + (int.tryParse(part.trim()) ?? 0);
+        }
+        return total * 1000;
+      }
+      final d = double.tryParse(v);
+      return d == null ? null : (d * 1000).round();
+    }
+    return null;
+  }
+
+  static Future<Map<String, (int, int)>> _segments(
+      String imdb, String se, String ep) async {
+    final key = '$imdb|$se|$ep';
+    final cached = _segCache[key];
+    if (cached != null) return cached;
+    final out = <String, (int, int)>{};
+    try {
+      final res = await http
+          .get(Uri.parse('https://api.introdb.app/segments'
+              '?imdb_id=$imdb&season=$se&episode=$ep'))
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final list = body is List
+            ? body
+            : (body is Map
+                ? (body['segments'] ?? body['results'] ?? body['data'])
+                : null);
+        if (list is List) {
+          for (final e in list) {
+            if (e is! Map) continue;
+            final kind = '${e['segment_type'] ?? e['type'] ?? ''}'.toLowerCase();
+            final a = _ms(e['start_ms']) ?? _sec(e['start_sec'] ?? e['start']);
+            final b = _ms(e['end_ms']) ?? _sec(e['end_sec'] ?? e['end']);
+            if (a == null || b == null || b <= a) continue;
+            if (kind.contains('intro')) {
+              out['intro'] ??= (a, b);
+            } else if (kind.contains('outro') ||
+                kind.contains('credit') ||
+                kind.contains('ending')) {
+              out['outro'] ??= (a, b);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    _segCache[key] = out;
+    return out;
+  }
 
   static Future<(int, int)?> _introdb(List<String> p) async {
     final imdb = p[0], se = p[1], ep = p[2];
