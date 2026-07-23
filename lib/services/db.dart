@@ -80,10 +80,10 @@ class Db {
       }
       final prevOwn = '${prev['id']}'.startsWith(lane);
       final rowOwn = '${row['id']}'.startsWith(lane);
+      final prevTitled = (prev['title'] ?? prev['name']) != null;
+      final rowTitled = (row['title'] ?? row['name']) != null;
       if ((rowOwn && !prevOwn) ||
-          (rowOwn == prevOwn &&
-              prev['name'] == null &&
-              row['name'] != null)) {
+          (rowOwn == prevOwn && !prevTitled && rowTitled)) {
         prev['id'] = row['id'];
       }
     }

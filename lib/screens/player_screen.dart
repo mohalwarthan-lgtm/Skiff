@@ -273,9 +273,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (rel != null && rel.isAfter(DateTime.now())) return;
     final nid = '${nv['id']}';
     // Title format identical to a picker-launched episode.
+    // Identical construction to the details screen: addons put the
+    // episode title in 'title' (not 'name'), which is why the handoff
+    // label kept coming out bare.
+    final epTitle = '${nv['title'] ?? nv['name'] ?? ''}';
     final label = '${mc?['name'] ?? ''} — S${nv['season']} '
         'E${nv['episode']}'
-        '${nv['name'] != null ? ' · ${nv['name']}' : ''}';
+        '${epTitle.isEmpty ? '' : ' · $epTitle'}';
     // streamsFor returns addon wrappers {'addon', 'streams': [...]} -
     // flatten to the actual streams.
     final streams = <Map>[];
