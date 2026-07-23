@@ -75,22 +75,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           : ((a['episode'] as num?)?.toInt() ?? 0) -
                               ((b['episode'] as num?)?.toInt() ?? 0);
                     });
-                  final toTick = n == -1
-                      ? vids.where((v) {
-                          final rel = DateTime.tryParse(
-                              '${v['released'] ?? ''}');
-                          return rel == null ||
-                              !rel.isAfter(DateTime.now());
-                        }).toList()
-                      : vids.take(n).toList();
-                  for (final v in toTick) {
-                    Db.markWatched(
-                        it['type'], it['id'], '${v['id']}', true);
+                  // A stale AniList "completed" must never bulldoze a
+                  // show you're actively watching HERE: once local watch
+                  // history exists, the app is the live source of truth
+                  // and the full-tick stamp is discarded, not applied.
+                  final started = n == -1 &&
+                      vids.any((v) => Db.isWatched(
+                          it['type'], it['id'], '${v['id']}'));
+                  if (started) {
+                    final k = '${it['type']}|${it['id']}';
+                    final rec = Map.of(Db.items.get(k) as Map)
+                      ..remove('alProgress');
+                    await Db.items.put(k, rec);
+                  } else {
+                    final toTick = n == -1
+                        ? vids.where((v) {
+                            final rel = DateTime.tryParse(
+                                '${v['released'] ?? ''}');
+                            return rel == null ||
+                                !rel.isAfter(DateTime.now());
+                          }).toList()
+                        : vids.take(n).toList();
+                    for (final v in toTick) {
+                      Db.markWatched(
+                          it['type'], it['id'], '${v['id']}', true);
+                    }
+                    final k = '${it['type']}|${it['id']}';
+                    final rec = Map.of(Db.items.get(k) as Map)
+                      ..remove('alProgress');
+                    await Db.items.put(k, rec);
                   }
-                  final k = '${it['type']}|${it['id']}';
-                  final rec = Map.of(Db.items.get(k) as Map)
-                    ..remove('alProgress');
-                  await Db.items.put(k, rec);
                 }
               } catch (_) {/* no capable add-on yet - retried next open */}
             }(),

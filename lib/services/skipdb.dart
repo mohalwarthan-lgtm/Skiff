@@ -9,6 +9,10 @@ import 'trakt.dart';
 /// session and answered from memory. No entry -> no button; graceful by
 /// nature.
 class SkipDb {
+  /// Last lookup identity, for the on-screen whisper (diagnosis at a
+  /// glance: which id and episode the databases were asked about).
+  static String lastLookup = '';
+
   static Map<String, List<Map>>? _byKey; // 'tt|season|episode' -> segments
   static bool _loading = false;
 
@@ -86,6 +90,7 @@ class SkipDb {
     if (p.length < 3 || p.first != 'kitsu') return null;
     final mal = await _malFor(p[1]);
     final ep = int.tryParse(p[2]);
+    lastLookup = 'mal ${mal ?? '–'}/e${ep ?? '–'}';
     if (mal == null || ep == null) return null;
     try {
       final res = await http
@@ -117,6 +122,7 @@ class SkipDb {
           r.$1, type, itemId, r.$2!, r.$3!);
       final imdb = r.$1;
       final se = t.$1, ep = t.$2;
+      lastLookup = '$imdb s$se e$ep';
       await _ensure();
       final list = _byKey?['$imdb|$se|$ep']
           ?.where((x) => kinds.contains('${x['segment_type']}'))

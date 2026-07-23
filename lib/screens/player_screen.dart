@@ -229,14 +229,45 @@ class _PlayerScreenState extends State<PlayerScreen>
             : ((a['episode'] as num?)?.toInt() ?? 0) -
                 ((b['episode'] as num?)?.toInt() ?? 0);
       });
-    final i = vids.indexWhere((v) => '${v['id']}' == widget.videoId);
-    if (i < 0 || i + 1 >= vids.length) return;
-    final nv = vids[i + 1];
+    // Semantic next, not positional next: merged-preset metadata can
+    // carry duplicate/absolute-numbered twin rows, and "the row after
+    // this one" silently switches lanes - wrong label, wrong id dialect
+    // for skip lookups. Same season, episode+1; else next season, E1.
+    Map? cur;
+    for (final v in vids) {
+      if ('${v['id']}' == widget.videoId) {
+        cur = v;
+        break;
+      }
+    }
+    if (cur == null) return;
+    final cs = (cur['season'] as num).toInt();
+    final ce = (cur['episode'] as num?)?.toInt() ?? 0;
+    Map? nv;
+    for (final v in vids) {
+      if ((v['season'] as num).toInt() == cs &&
+          ((v['episode'] as num?)?.toInt() ?? 0) == ce + 1) {
+        nv = v;
+        break;
+      }
+    }
+    if (nv == null) {
+      for (final v in vids) {
+        if ((v['season'] as num).toInt() == cs + 1 &&
+            ((v['episode'] as num?)?.toInt() ?? 0) == 1) {
+          nv = v;
+          break;
+        }
+      }
+    }
+    if (nv == null) return;
     final rel = DateTime.tryParse('${nv['released'] ?? ''}');
     if (rel != null && rel.isAfter(DateTime.now())) return;
     final nid = '${nv['id']}';
-    final label = 'S${nv['season']} E${nv['episode']}'
-        '${nv['name'] != null ? ' · ${nv['name']}' : ''}';
+    // Title format identical to a picker-launched episode.
+    final label = '${mc?['name'] ?? ''} — S${nv['season']} '
+        'E${nv['episode']}'
+        '${nv['name'] != null ? ' — ${nv['name']}' : ''}';
     // streamsFor returns addon wrappers {'addon', 'streams': [...]} -
     // flatten to the actual streams.
     final streams = <Map>[];
@@ -638,25 +669,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// sub-ass-override=yes applies size/outline/box to ASS subs while
   /// KEEPING authored positioning (top signs, background voices).
   void _applySubStyle() {
-    _setMpv('sub-ass-override', 'yes');
+    // ASS scripts keep their authored styling, positioning, and
+    // collision handling (the "piling" fix); the sliders govern
+    // plain-text subtitles (SRT), where mpv's style options apply.
+    _setMpv('sub-ass-override', 'no');
     _setMpv('sub-font-size', '${(subSize * 1.25).round()}');
     _setMpv('sub-border-size', subOutline.toStringAsFixed(1));
     final a = (subBg * 2.55).round().clamp(0, 255);
     _setMpv('sub-back-color',
         '#${a.toRadixString(16).padLeft(2, '0')}000000');
-    // ASS subtitles ignore sub-back-color; the box needs a libass style
-    // override. Alpha is inverted in libass (&H00=opaque, FF=clear).
-    if (subBg > 0) {
-      final la = (255 - a)
-          .clamp(0, 255)
-          .toRadixString(16)
-          .padLeft(2, '0')
-          .toUpperCase();
-      _setMpv('sub-ass-force-style',
-          'BorderStyle=4,BackColour=&H${la}000000&');
-    } else {
-      _setMpv('sub-ass-force-style', '');
-    }
+    _setMpv('sub-ass-force-style', ''); // never restyle ASS scripts
   }
 
   TextStyle get _subStyle => TextStyle(
@@ -1015,7 +1037,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                     right: 18,
                     child: Text(
                       'skip data · intro ${_intro != null ? '✓' : '–'}'
-                      ' · outro ${_outro != null ? '✓' : '–'}',
+                      ' · outro ${_outro != null ? '✓' : '–'}'
+                      ' · ${SkipDb.lastLookup}',
                       style: const TextStyle(
                           fontSize: 11, color: Colors.white38),
                     ),
