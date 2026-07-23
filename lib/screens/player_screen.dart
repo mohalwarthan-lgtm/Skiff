@@ -97,10 +97,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       (player.platform as dynamic).setProperty('sub-visibility', 'yes');
     } catch (_) {}
     _applySubStyle();
-    Skips.intro(widget.type, widget.videoId).then((v) {
+    Skips.intro(widget.type, widget.itemId, widget.videoId).then((v) {
       if (mounted && v != null) setState(() => _intro = v);
     });
-    Skips.outro(widget.type, widget.videoId).then((v) {
+    Skips.outro(widget.type, widget.itemId, widget.videoId).then((v) {
       if (mounted && v != null) setState(() => _outro = v);
     });
     player.stream.position.listen((pos) {

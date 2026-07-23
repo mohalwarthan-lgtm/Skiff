@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'animeidx.dart';
 import 'db.dart';
 
 /// Skip-segment lookups. Each database is asked in its OWN identity, so
@@ -15,27 +16,59 @@ class Skips {
   /// Last lookup identity - shown by the player's diagnostic line.
   static String lastLookup = '';
 
-  static Future<(int, int)?> intro(String type, String videoId) async {
+  static Future<(int, int)?> intro(
+      String type, String itemId, String videoId) async {
     if (type != 'series') return null;
     final p = videoId.split(':');
     if (p.length >= 3 && (p[0] == 'kitsu' || p[0] == 'mal')) {
       return _aniskip('op', p);
     }
-    if (p.length >= 3 && p[0].startsWith('tt')) return _introdb(p);
-    lastLookup = 'no source for $videoId';
-    return null;
+    if (p.length < 3 || !p[0].startsWith('tt')) {
+      lastLookup = 'no source for $videoId';
+      return null;
+    }
+    // Anime first: if the mapping knows this title, Aniskip is far
+    // richer than IntroDB. Otherwise it's ordinary TV -> IntroDB.
+    final mal = await _malForImdb(type, itemId, p[0], p[1]);
+    if (mal != null) {
+      return _aniskip('op', [
+        'mal',
+        mal,
+        p[2],
+      ]);
+    }
+    return _introdb(p);
   }
 
   /// Credits/ending window - lets Up Next fire when the episode really
   /// ends. Anime only for now: IntroDB serves intros through its public
   /// endpoint; its segment endpoints aren't wired here.
-  static Future<(int, int)?> outro(String type, String videoId) async {
+  static Future<(int, int)?> outro(
+      String type, String itemId, String videoId) async {
     if (type != 'series') return null;
     final p = videoId.split(':');
     if (p.length >= 3 && (p[0] == 'kitsu' || p[0] == 'mal')) {
       return _aniskip('ed', p);
     }
-    return null;
+    if (p.length < 3 || !p[0].startsWith('tt')) return null;
+    final mal = await _malForImdb(type, itemId, p[0], p[1]);
+    if (mal == null) return null; // IntroDB exposes intros only
+    return _aniskip('ed', ['mal', mal, p[2]]);
+  }
+
+  /// Two tiers, cheapest first:
+  ///  1. a MAL id captured during the AniList pull (single-cour shows -
+  ///     covers brand-new seasonal anime the moment you add it there);
+  ///  2. the anime mapping index, which is season-aware.
+  static Future<String?> _malForImdb(
+      String type, String itemId, String imdb, String seasonStr) async {
+    final season = int.tryParse(seasonStr) ?? 0;
+    final own = Db.item(type, itemId)?['mal'];
+    if (own != null && season == 1) {
+      lastLookup = 'anilist mal $own';
+      return '$own';
+    }
+    return AnimeIndex.malFor(imdb, season);
   }
 
   // ---------------- IntroDB (everything that isn't anime) ----------------

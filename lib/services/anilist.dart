@@ -83,7 +83,7 @@ class Anilist {
 query ($name: String) {
   MediaListCollection(userName: $name, type: ANIME) {
     lists { entries { status progress media {
-      id format
+      id idMal format
       title { romaji english }
       coverImage { large }
     } } }
@@ -124,6 +124,7 @@ query ($name: String) {
           'name': m['title']?['english'] ?? m['title']?['romaji'] ?? '',
           'nameR': m['title']?['romaji'] ?? '',
           'nameE': m['title']?['english'] ?? '',
+          'mal': m['idMal'],
           'movie': '${m['format']}' == 'MOVIE',
           'poster': m['coverImage']?['large'],
         });
@@ -167,12 +168,16 @@ query ($name: String) {
                       'anyWatching': false,
                       'anyPlan': false,
                       'allCompleted': true,
+                      'mals': <String>{},
                     });
             agg['progressSum'] =
                 (agg['progressSum'] as int) + (e['progress'] as int);
             if (e['shelf'] == 'watching') agg['anyWatching'] = true;
             if (e['shelf'] == 'plan') agg['anyPlan'] = true;
             if (e['completed'] != true) agg['allCompleted'] = false;
+            if (e['mal'] != null) {
+              (agg['mals'] as Set<String>).add('${e['mal']}');
+            }
           }()
       ]);
     }
@@ -202,11 +207,24 @@ query ($name: String) {
         continue;
       }
       final stamp = allDone ? -1 : (agg['progressSum'] as int);
-      if (stamp != 0) {
-        final k = '$type|$id';
-        final rec = Map.of(Db.items.get(k) as Map);
-        rec['alProgress'] = stamp;
-        await Db.items.put(k, rec);
+      final mals = agg['mals'] as Set<String>;
+      final k = '$type|$id';
+      final cur = Db.items.get(k);
+      if (cur is Map) {
+        final rec = Map.of(cur);
+        var dirty = false;
+        if (stamp != 0) {
+          rec['alProgress'] = stamp;
+          dirty = true;
+        }
+        // Exactly one MAL id means this show is one cour - safe to use
+        // directly for skip lookups. Several means a folded franchise;
+        // the season-aware index resolves those instead.
+        if (mals.length == 1) {
+          rec['mal'] = mals.first;
+          dirty = true;
+        }
+        if (dirty) await Db.items.put(k, rec);
       }
     }
     final folded = resolved - byId.length;
