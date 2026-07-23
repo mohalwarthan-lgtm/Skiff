@@ -243,23 +243,31 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (cur == null) return;
     final cs = (cur['season'] as num).toInt();
     final ce = (cur['episode'] as num?)?.toInt() ?? 0;
-    Map? nv;
-    for (final v in vids) {
-      if ((v['season'] as num).toInt() == cs &&
-          ((v['episode'] as num?)?.toInt() ?? 0) == ce + 1) {
-        nv = v;
-        break;
-      }
-    }
-    if (nv == null) {
+    // LANE-LOCK: metadata can hold twin rows for the same episode in
+    // different id dialects (one often nameless). The next episode must
+    // come from the SAME id family as the one playing now - so a binge
+    // can never hop lanes (which broke skip lookups and dropped titles).
+    final lane = widget.videoId.contains(':')
+        ? widget.videoId.substring(
+            0, widget.videoId.lastIndexOf(':') + 1)
+        : '';
+    Map? pickRow(int ws, int we) {
+      Map? named, any;
       for (final v in vids) {
-        if ((v['season'] as num).toInt() == cs + 1 &&
-            ((v['episode'] as num?)?.toInt() ?? 0) == 1) {
-          nv = v;
-          break;
+        if ((v['season'] as num).toInt() != ws ||
+            ((v['episode'] as num?)?.toInt() ?? 0) != we) {
+          continue;
         }
+        if (lane.isNotEmpty && '${v['id']}'.startsWith(lane)) {
+          return v; // same lane: always wins
+        }
+        if (named == null && v['name'] != null) named = v;
+        any ??= v;
       }
+      return named ?? any;
     }
+
+    final nv = pickRow(cs, ce + 1) ?? pickRow(cs + 1, 1);
     if (nv == null) return;
     final rel = DateTime.tryParse('${nv['released'] ?? ''}');
     if (rel != null && rel.isAfter(DateTime.now())) return;
@@ -267,7 +275,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     // Title format identical to a picker-launched episode.
     final label = '${mc?['name'] ?? ''} — S${nv['season']} '
         'E${nv['episode']}'
-        '${nv['name'] != null ? ' — ${nv['name']}' : ''}';
+        '${nv['name'] != null ? ' · ${nv['name']}' : ''}';
     // streamsFor returns addon wrappers {'addon', 'streams': [...]} -
     // flatten to the actual streams.
     final streams = <Map>[];
