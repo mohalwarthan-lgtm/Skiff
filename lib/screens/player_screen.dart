@@ -98,14 +98,28 @@ class _PlayerScreenState extends State<PlayerScreen>
     } catch (_) {}
     _applySubStyle();
     Skips.intro(widget.type, widget.itemId, widget.videoId).then((v) {
-      if (mounted && v != null) setState(() => _intro = v);
+      if (mounted && v != null) {
+        setState(() {
+          _intro = v;
+          _introFrom = 'db';
+        });
+      }
     });
     Skips.outro(widget.type, widget.itemId, widget.videoId).then((v) {
-      if (mounted && v != null) setState(() => _outro = v);
+      if (mounted && v != null) {
+        setState(() {
+          _outro = v;
+          _outroFrom = 'db';
+        });
+      }
     });
     player.stream.position.listen((pos) {
       final d = player.state.duration.inMilliseconds;
       final ms = pos.inMilliseconds;
+      if (!_chaptersTried && d > 0) {
+        _chaptersTried = true;
+        _chapterFallback(d);
+      }
       final ready = _outro != null
           ? ms >= _outro!.$1 - 300000 // scout well before credits
           : (d > 0 && ms / d >= 0.60);
@@ -184,8 +198,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   late final Future<void> Function() _flushRef = _flushStop;
   Timer? _checkpoint;
-  (int, int)? _intro; // SkipDB intro window (ms)
-  (int, int)? _outro; // SkipDB outro window (ms)
+  (int, int)? _intro; // intro window (ms)
+  (int, int)? _outro; // outro/credits window (ms)
+  String _introFrom = '', _outroFrom = '';
+  bool _chaptersTried = false;
   bool _introDismissed = false;
   Map? _next; // next episode: videoId/label/url/stream
   bool _nextPrefetched = false, _nextDismissed = false;
@@ -210,6 +226,65 @@ class _PlayerScreenState extends State<PlayerScreen>
       await Trakt.scrobble(
           'stop', widget.type, widget.itemId, widget.videoId, _pct());
     } catch (_) {}
+  }
+
+  /// Many releases embed chapters named "Opening" / "Ending" / etc.
+  /// When the crowd databases have nothing, the file itself often does -
+  /// and it is exact for THIS encode, so no drift. Read through mpv's
+  /// property interface; if the backend doesn't expose it, this silently
+  /// does nothing.
+  Future<void> _chapterFallback(int durMs) async {
+    if (_intro != null && _outro != null) return;
+    try {
+      final p = player.platform as dynamic;
+      final n = int.tryParse('${await p.getProperty('chapter-list/count')}') ?? 0;
+      if (n <= 0) return;
+      final titles = <String>[];
+      final times = <double>[];
+      for (var i = 0; i < n; i++) {
+        titles.add('${await p.getProperty('chapter-list/$i/title')}');
+        times.add(
+            double.tryParse('${await p.getProperty('chapter-list/$i/time')}') ??
+                -1);
+      }
+      final introRe =
+          RegExp(r'\b(intro|opening|op|ncop|avant)\b', caseSensitive: false);
+      final outroRe = RegExp(
+          r'\b(outro|ending|credits|endcard|ed|nced|preview|next episode)\b',
+          caseSensitive: false);
+      int endOf(int i) =>
+          ((i + 1 < n && times[i + 1] > times[i]) ? times[i + 1] * 1000 : durMs)
+              .toInt();
+
+      if (_intro == null) {
+        for (var i = 0; i < n; i++) {
+          if (times[i] < 0 || !introRe.hasMatch(titles[i])) continue;
+          final a = (times[i] * 1000).toInt(), b = endOf(i);
+          if (b - a < 5000 || b - a > 240000) continue; // sanity
+          if (mounted) {
+            setState(() {
+              _intro = (a, b);
+              _introFrom = 'chapters';
+            });
+          }
+          break;
+        }
+      }
+      if (_outro == null) {
+        for (var i = n - 1; i >= 0; i--) {
+          if (times[i] < 0 || !outroRe.hasMatch(titles[i])) continue;
+          final a = (times[i] * 1000).toInt();
+          if (a < durMs ~/ 2) continue; // credits belong to the tail
+          if (mounted) {
+            setState(() {
+              _outro = (a, endOf(i));
+              _outroFrom = 'chapters';
+            });
+          }
+          break;
+        }
+      }
+    } catch (_) {/* backend doesn't expose properties - fine */}
   }
 
   /// Decide the next episode and its stream - the same-release ladder:
@@ -1058,8 +1133,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                     top: 14,
                     right: 18,
                     child: Text(
-                      'skip data · intro ${_intro != null ? '✓' : '–'}'
-                      ' · outro ${_outro != null ? '✓' : '–'}'
+                      'skip · intro ${_intro != null ? '✓ $_introFrom' : '–'}'
+                      ' · outro ${_outro != null ? '✓ $_outroFrom' : '–'}'
                       ' · ${Skips.lastLookup}',
                       style: const TextStyle(
                           fontSize: 11, color: Colors.white38),
