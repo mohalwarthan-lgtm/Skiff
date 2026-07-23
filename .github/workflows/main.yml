@@ -74,6 +74,15 @@ jobs:
           # builds fine but every network call fails on-device.
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
           grep -q INTERNET android/app/src/main/AndroidManifest.xml
+      - name: Android TV support (leanback manifest)
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          # A TV has no touchscreen: without this the app is filtered out.
+          sed -i 's#<application#<uses-feature android:name="android.software.leanback" android:required="false"/>\n    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>\n    <application#' $M
+          # Show up in the TV launcher, with a banner it can draw.
+          sed -i 's#<application #<application android:banner="@mipmap/ic_launcher" #' $M
+          sed -i 's#<category android:name="android.intent.category.LAUNCHER"/>#<category android:name="android.intent.category.LAUNCHER"/>\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>#' $M
+          grep -q leanback $M && grep -q LEANBACK_LAUNCHER $M
       - name: Dependencies
         run: flutter pub get
       - name: Build APK (release)
