@@ -45,18 +45,58 @@ class Db {
       'runtime': m['runtime'],
       'imdbRating': m['imdbRating'],
       'genres': m['genres'],
-      'videos': [
-        for (final v in (m['videos'] as List? ?? []))
-          {
-            'id': v['id'],
-            'title': v['title'],
-            'name': v['name'],
-            'season': v['season'],
-            'episode': v['episode'],
-            'released': v['released'],
-          }
-      ],
+      'videos': _canonicalVideos(id, m['videos'] as List? ?? const []),
     });
+  }
+
+  /// Some provider presets emit TWO rows for the same episode in
+  /// different id dialects (one of them often nameless). Keep exactly one
+  /// row per season+episode - preferring the item's own id dialect - and
+  /// merge every field so no title or date is lost.
+  static List<Map> _canonicalVideos(String itemId, List raw) {
+    final lane = itemId.contains(':')
+        ? itemId.substring(0, itemId.indexOf(':') + 1)
+        : (itemId.startsWith('tt') ? 'tt' : '');
+    final byEp = <String, Map>{};
+    for (final v in raw) {
+      if (v is! Map) continue;
+      final row = {
+        'id': v['id'],
+        'title': v['title'],
+        'name': v['name'],
+        'season': v['season'],
+        'episode': v['episode'],
+        'released': v['released'],
+      };
+      final k = '${v['season']}|${v['episode']}';
+      final prev = byEp[k];
+      if (prev == null) {
+        byEp[k] = row;
+        continue;
+      }
+      // merge: never lose a name/title/date that one twin has
+      for (final f in ['name', 'title', 'released']) {
+        if (prev[f] == null && row[f] != null) prev[f] = row[f];
+      }
+      final prevOwn = '${prev['id']}'.startsWith(lane);
+      final rowOwn = '${row['id']}'.startsWith(lane);
+      if ((rowOwn && !prevOwn) ||
+          (rowOwn == prevOwn &&
+              prev['name'] == null &&
+              row['name'] != null)) {
+        prev['id'] = row['id'];
+      }
+    }
+    final out = byEp.values.toList()
+      ..sort((a, b) {
+        final sa = (a['season'] as num?)?.toInt() ?? 0,
+            sb = (b['season'] as num?)?.toInt() ?? 0;
+        return sa != sb
+            ? sa - sb
+            : ((a['episode'] as num?)?.toInt() ?? 0) -
+                ((b['episode'] as num?)?.toInt() ?? 0);
+      });
+    return out;
   }
 
   static Map? cachedMeta(String type, String id) =>

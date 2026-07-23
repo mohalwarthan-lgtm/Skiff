@@ -7,7 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/addons.dart';
 import '../services/db.dart';
-import '../services/skipdb.dart';
+import '../services/skips.dart';
 import '../services/net.dart';
 import '../services/trakt.dart';
 
@@ -97,10 +97,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       (player.platform as dynamic).setProperty('sub-visibility', 'yes');
     } catch (_) {}
     _applySubStyle();
-    SkipDb.intro(widget.type, widget.itemId, widget.videoId).then((v) {
+    Skips.intro(widget.type, widget.videoId).then((v) {
       if (mounted && v != null) setState(() => _intro = v);
     });
-    SkipDb.outro(widget.type, widget.itemId, widget.videoId).then((v) {
+    Skips.outro(widget.type, widget.videoId).then((v) {
       if (mounted && v != null) setState(() => _outro = v);
     });
     player.stream.position.listen((pos) {
@@ -744,7 +744,17 @@ class _PlayerScreenState extends State<PlayerScreen>
 
           return AlertDialog(
             title: const Text('Subtitle style'),
+            // Honest scope: ASS/SSA subtitles keep their authored
+            // styling and positioning; these govern plain-text subs.
+            contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                    'Applies to plain-text subtitles. ASS/SSA tracks '
+                    'keep their own styling and placement.',
+                    style: TextStyle(fontSize: 11, color: Colors.white54)),
+              ),
               row('Size', subSize, 20, 80, 30, 'sub_size',
                   (v) => subSize = v),
               row('Outline', subOutline, 0, 5, 10, 'sub_outline',
@@ -1046,7 +1056,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     child: Text(
                       'skip data · intro ${_intro != null ? '✓' : '–'}'
                       ' · outro ${_outro != null ? '✓' : '–'}'
-                      ' · ${SkipDb.lastLookup}',
+                      ' · ${Skips.lastLookup}',
                       style: const TextStyle(
                           fontSize: 11, color: Colors.white38),
                     ),
