@@ -53,6 +53,7 @@ jobs:
         with:
           name: skiffbox-windows
           path: skiffbox-windows.zip
+          retention-days: 3
 
   android:
     runs-on: ubuntu-latest
@@ -84,6 +85,7 @@ jobs:
         with:
           name: skiffbox-android
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 3
 
   macos:
     runs-on: macos-14
@@ -108,3 +110,4 @@ jobs:
         with:
           name: skiffbox-macos
           path: skiffbox-macos.zip
+          retention-days: 3
