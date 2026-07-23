@@ -94,7 +94,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     // Let mpv render subtitles natively - honoring ASS positioning
     // (top-of-screen signs, background voices) as authored.
     try {
-      (player.platform as dynamic).setProperty('sub-visibility', 'yes');
+      // Only one renderer at a time: native on desktop, Flutter on mobile.
+      (player.platform as dynamic)
+          .setProperty('sub-visibility', _desktop ? 'yes' : 'no');
     } catch (_) {}
     _applySubStyle();
     Skips.intro(widget.type, widget.itemId, widget.videoId).then((v) {
@@ -858,7 +860,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                   onChanged: (v) {
                     assign(v);
                     Db.setSetting(key, v.toStringAsFixed(1));
-                    _applySubStyle(); // live on the video, natively
+                    _applySubStyle(); // native renderer (desktop)
+                    if (!_desktop) setState(() {}); // Flutter renderer
                     setD(() {});
                     setState(() {}); // live-preview on the video
                   },
@@ -876,8 +879,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
                 child: Text(
-                    'Applies to plain-text subtitles. ASS/SSA tracks '
-                    'keep their own styling and placement.',
+                    'On this device these settings apply to the '
+                    'subtitles you see; on desktop, ASS/SSA tracks keep '
+                    'their own styling and placement.',
                     style: TextStyle(fontSize: 11, color: Colors.white54)),
               ),
               row('Size', subSize, 20, 80, 30, 'sub_size',
@@ -948,9 +952,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                         controls: NoVideoControls,
                         // We paint subtitles ourselves below - full control
                         // over position and style on every platform.
-                        subtitleViewConfiguration:
-                            const SubtitleViewConfiguration(
-                                visible: false)))),
+                        // Desktop: libass paints into the frame, keeping
+                        // authored ASS positioning. Android has no system
+                        // font provider for libass, so nothing would be
+                        // drawn - there, Flutter renders the text.
+                        subtitleViewConfiguration: SubtitleViewConfiguration(
+                          visible: !_desktop,
+                          style: _subStyle,
+                          textAlign: TextAlign.center,
+                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+                        )))),
             Center(
               child: StreamBuilder<bool>(
                 stream: player.stream.buffering,
