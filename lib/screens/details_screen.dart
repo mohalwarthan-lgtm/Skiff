@@ -7,6 +7,26 @@ import '../services/net.dart';
 import '../services/trakt.dart';
 import 'player_screen.dart';
 
+/// Bytes for a stream: the standard hint first, then any size written
+/// into the label (most add-ons put one there).
+int? _bytesOf(Map st) {
+  final v = st['behaviorHints']?['videoSize'];
+  if (v is num && v > 0) return v.toInt();
+  final t = '${st['name'] ?? ''} ${st['title'] ?? ''} '
+      '${st['description'] ?? ''}';
+  final m = RegExp(r'([0-9]+(?:[.,][0-9]+)?)\s*(GB|GiB|MB|MiB)',
+          caseSensitive: false)
+      .firstMatch(t);
+  if (m == null) return null;
+  final n = double.tryParse(m.group(1)!.replaceAll(',', '.')) ?? 0;
+  final gig = m.group(2)!.toLowerCase().startsWith('g');
+  return (n * (gig ? 1073741824 : 1048576)).round();
+}
+
+String _fmtBytes(num b) => b >= 1073741824
+    ? '${(b / 1073741824).toStringAsFixed(1)} GB'
+    : '${(b / 1048576).round()} MB';
+
 class DetailsScreen extends StatefulWidget {
   final String type;
   final String id;
@@ -226,26 +246,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
     return seasons.firstWhere((x) => x > 0,
         orElse: () => seasons.isEmpty ? 1 : seasons.first);
   }
-
-  /// Bytes for a stream: the standard hint first, then any size written
-  /// into the label (most add-ons put one there).
-  static int? _bytesOf(Map st) {
-    final v = st['behaviorHints']?['videoSize'];
-    if (v is num && v > 0) return v.toInt();
-    final t = '${st['name'] ?? ''} ${st['title'] ?? ''} '
-        '${st['description'] ?? ''}';
-    final m = RegExp(r'([0-9]+(?:[.,][0-9]+)?)\s*(GB|GiB|MB|MiB)',
-            caseSensitive: false)
-        .firstMatch(t);
-    if (m == null) return null;
-    final n = double.tryParse(m.group(1)!.replaceAll(',', '.')) ?? 0;
-    final gig = m.group(2)!.toLowerCase().startsWith('g');
-    return (n * (gig ? 1073741824 : 1048576)).round();
-  }
-
-  static String _fmtBytes(num b) => b >= 1073741824
-      ? '${(b / 1073741824).toStringAsFixed(1)} GB'
-      : '${(b / 1048576).round()} MB';
 
   Future<void> _batchDownload(List eps) async {
     final m = meta;
