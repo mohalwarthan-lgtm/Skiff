@@ -1026,26 +1026,27 @@ class _StreamSheetState extends State<_StreamSheet> {
         return Column(children: [
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Text(widget.videoTitle,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-          if (_refreshing)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 18),
-              tooltip: 'Search again',
-              visualDensity: VisualDensity.compact,
-              onPressed: () {
-                _autoRetries = 0;
-                _fetch(manual: true);
-              },
-            ),
+            child: Row(children: [
+              Expanded(
+                child: Text(widget.videoTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              if (_refreshing)
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: 'Search again',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    _autoRetries = 0;
+                    _fetch(manual: true);
+                  },
+                ),
+            ]),
           ),
           if (busy != null) Text(busy!, style: TextStyle(color: Theme.of(context).hintColor)),
           if (error != null)
