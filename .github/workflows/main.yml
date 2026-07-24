@@ -76,12 +76,19 @@ jobs:
           grep -q INTERNET android/app/src/main/AndroidManifest.xml
       - name: App icon
         run: |
-          # ImageMagick ships on the runner; generate every density from
-          # the one source logo so Android stops using Flutter's default.
+          # ImageMagick is no longer preinstalled, and v7 renamed the
+          # binary - find whichever exists, install only if neither does.
+          if ! command -v magick >/dev/null 2>&1 \
+             && ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq imagemagick
+          fi
+          IM=$(command -v magick || command -v convert)
+          echo "using $IM"
           for e in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
             d=${e%%:*}; px=${e##*:}
             mkdir -p android/app/src/main/res/mipmap-$d
-            convert assets/logo.png -resize ${px}x${px} \
+            "$IM" assets/logo.png -resize ${px}x${px} \
               android/app/src/main/res/mipmap-$d/ic_launcher.png
           done
           ls -l android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
