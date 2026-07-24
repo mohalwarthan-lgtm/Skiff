@@ -74,6 +74,17 @@ jobs:
           # builds fine but every network call fails on-device.
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
           grep -q INTERNET android/app/src/main/AndroidManifest.xml
+      - name: App icon
+        run: |
+          # ImageMagick ships on the runner; generate every density from
+          # the one source logo so Android stops using Flutter's default.
+          for e in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            d=${e%%:*}; px=${e##*:}
+            mkdir -p android/app/src/main/res/mipmap-$d
+            convert assets/logo.png -resize ${px}x${px} \
+              android/app/src/main/res/mipmap-$d/ic_launcher.png
+          done
+          ls -l android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
       - name: Android TV support (leanback manifest)
         run: |
           M=android/app/src/main/AndroidManifest.xml
@@ -111,6 +122,14 @@ jobs:
             /usr/libexec/PlistBuddy -c "Add :com.apple.security.network.client bool true" "$f" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :com.apple.security.network.client true" "$f"
           done
+      - name: App icon
+        run: |
+          # sips is built into macOS; the .appiconset expects these names.
+          SET=macos/Runner/Assets.xcassets/AppIcon.appiconset
+          for px in 16 32 64 128 256 512 1024; do
+            sips -z $px $px assets/logo.png --out $SET/app_icon_$px.png
+          done
+          ls $SET
       - run: flutter pub get
       - run: flutter build macos --release --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }} --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
       - name: Zip the app bundle
