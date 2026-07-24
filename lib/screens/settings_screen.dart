@@ -368,19 +368,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ]),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Always show subtitles'),
-                    subtitle: Text(
-                        'Even when the audio already matches your '
-                        'subtitle language.',
-                        style: hint),
-                    value: Db.setting('subs_always') == '1',
-                    onChanged: (v) {
-                      Db.setSetting('subs_always', v ? '1' : '0');
-                      setState(() {});
-                    },
-                  ),
                 ]),
           ),
         ),

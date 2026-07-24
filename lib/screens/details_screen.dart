@@ -897,15 +897,48 @@ class _StreamSheet extends StatefulWidget {
 class _StreamSheetState extends State<_StreamSheet> {
   List<Map>? groups;
   String? error, busy;
+  bool _refreshing = false;
+  int _autoRetries = 0;
+
+  int _count(List<Map>? g) => g == null
+      ? 0
+      : g.fold(0, (n, grp) => n + ((grp['streams'] as List?)?.length ?? 0));
 
   @override
   void initState() {
     super.initState();
-    Addons.streamsFor(widget.type, widget.videoId).then((g) {
-      if (mounted) setState(() => groups = g);
-    }).catchError((e) {
-      if (mounted) setState(() => error = '$e');
+    _fetch();
+  }
+
+  /// Debrid-backed add-ons warm up on the first request for an episode:
+  /// the first answer is often partial, the second complete. Keep the
+  /// better of the two answers, and quietly re-ask while results look
+  /// thin.
+  Future<void> _fetch({bool manual = false}) async {
+    if (_refreshing) return;
+    setState(() {
+      _refreshing = true;
+      if (manual) error = null;
     });
+    try {
+      final g = await Addons.streamsFor(widget.type, widget.videoId);
+      if (!mounted) return;
+      setState(() {
+        if (_count(g) >= _count(groups)) groups = g;
+        error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      if (groups == null) setState(() => error = '$e');
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+    if (!mounted) return;
+    if (!manual && _count(groups) < 8 && _autoRetries < 2) {
+      _autoRetries++;
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) _fetch();
+    }
   }
 
   Future<String> _resolveUrl(Map s) async {
@@ -995,6 +1028,24 @@ class _StreamSheetState extends State<_StreamSheet> {
             padding: const EdgeInsets.all(14),
             child: Text(widget.videoTitle,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
+          if (_refreshing)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              tooltip: 'Search again',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                _autoRetries = 0;
+                _fetch(manual: true);
+              },
+            ),
           ),
           if (busy != null) Text(busy!, style: TextStyle(color: Theme.of(context).hintColor)),
           if (error != null)

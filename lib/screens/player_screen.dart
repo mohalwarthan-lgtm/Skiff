@@ -165,8 +165,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       final slang = (Db.setting('pref_slang') ?? '').trim();
       if (alang.isNotEmpty) await _setMpv('alang', alang);
       if (slang.isNotEmpty) await _setMpv('slang', slang);
-      await _setMpv('subs-with-matching-audio',
-          Db.setting('subs_always') == '1' ? 'yes' : 'no');
       final isLocal = !widget.url.startsWith('http');
       await player.open(
           Media(widget.url,
