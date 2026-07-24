@@ -13,7 +13,7 @@ int? _bytesOf(Map st) {
   final v = st['behaviorHints']?['videoSize'];
   if (v is num && v > 0) return v.toInt();
   final t = '${st['name'] ?? ''} ${st['title'] ?? ''} '
-      '${st['description'] ?? ''}';
+      '${st['description'] ?? ''} ${st['behaviorHints']?['filename'] ?? ''}';
   final m = RegExp(r'([0-9]+(?:[.,][0-9]+)?)\s*(GB|GiB|MB|MiB)',
           caseSensitive: false)
       .firstMatch(t);
@@ -22,6 +22,20 @@ int? _bytesOf(Map st) {
   final gig = m.group(2)!.toLowerCase().startsWith('g');
   return (n * (gig ? 1073741824 : 1048576)).round();
 }
+
+/// Strip decorative formatting some AIOStreams templates add (NBSP
+/// padding, zero-width joiners, 4K/2K aliases, full-width P) so quality
+/// tokens match no matter how the label is styled.
+String _plainLabel(String s) => s
+    .replaceAll('\u00a0', ' ')
+    .replaceAll('\u200d', '')
+    .replaceAll('\u200b', '')
+    .replaceAll('\uFEFF', '')
+    .replaceAll('P', 'p')
+    .replaceAll(RegExp(r'\b4k\b', caseSensitive: false), '2160p')
+    .replaceAll(RegExp(r'\b2k\b', caseSensitive: false), '1440p')
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .toLowerCase();
 
 String _fmtBytes(num b) => b >= 1073741824
     ? '${(b / 1073741824).toStringAsFixed(1)} GB'
@@ -212,10 +226,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
   /// "1080p BluRay" -> resolution AND any of that type's tokens.
   bool _matchesQuality(String text, String q) {
-    final parts = q.toLowerCase().split(' ');
+    text = _plainLabel(text);
+    q = _plainLabel(q);
+    final parts = q.split(' ');
     if (!text.contains(parts.first)) return false;
     if (parts.length == 1) return true;
-    final typeLabel = q.substring(q.indexOf(' ') + 1);
+    final typeLabel = _plainLabel(q.substring(q.indexOf(' ') + 1));
     for (final rt in _relTypes) {
       if (rt.$1 == typeLabel) return rt.$2.any(text.contains);
     }

@@ -31,11 +31,13 @@ class Skips {
     // richer than IntroDB. Otherwise it's ordinary TV -> IntroDB.
     final mal = await _malForImdb(type, itemId, p[0], p[1]);
     if (mal != null) {
-      return _aniskip('op', [
-        'mal',
-        mal,
-        p[2],
-      ]);
+      return _aniskip('op', ['mal', mal, p[2]]);
+    }
+    // Anime that the index maps but Aniskip lacks shouldn't waste a call
+    // on IntroDB (western-TV only). If genres say anime, stop here.
+    if (_looksAnime(type, itemId)) {
+      lastLookup = 'anime, no aniskip data ${p[0]} s${p[1]} e${p[2]}';
+      return null;
     }
     final segs = await _segments(p[0], p[1], p[2]);
     if (segs['intro'] != null) {
@@ -58,7 +60,16 @@ class Skips {
     if (p.length < 3 || !p[0].startsWith('tt')) return null;
     final mal = await _malForImdb(type, itemId, p[0], p[1]);
     if (mal != null) return _aniskip('ed', ['mal', mal, p[2]]);
+    if (_looksAnime(type, itemId)) return null;
     return (await _segments(p[0], p[1], p[2]))['outro'];
+  }
+
+  /// Does this item's metadata read as anime? (Genres, since with an
+  /// imdb-keyed anime provider the id itself carries no hint.)
+  static bool _looksAnime(String type, String itemId) {
+    final gs = (Db.cachedMeta(type, itemId)?['genres'] as List? ?? [])
+        .map((g) => '$g'.toLowerCase());
+    return gs.any((g) => g.contains('anime')) || gs.contains('animation');
   }
 
   /// Two tiers, cheapest first:
@@ -68,12 +79,20 @@ class Skips {
   static Future<String?> _malForImdb(
       String type, String itemId, String imdb, String seasonStr) async {
     final season = int.tryParse(seasonStr) ?? 0;
-    final own = Db.item(type, itemId)?['mal'];
-    if (own != null && season == 1) {
-      lastLookup = 'anilist mal $own';
-      return '$own';
+    // The season-aware index is the authority for multi-season shows.
+    // The AniList-captured MAL id only stands in for a SINGLE-cour show
+    // (season 1, and only when the index can't answer), so a folded
+    // franchise never gets one cour's timings applied to another.
+    final indexed = await AnimeIndex.malFor(imdb, season);
+    if (indexed != null) return indexed;
+    if (season == 1) {
+      final own = Db.item(type, itemId)?['mal'];
+      if (own != null) {
+        lastLookup = 'anilist mal $own';
+        return '$own';
+      }
     }
-    return AnimeIndex.malFor(imdb, season);
+    return null;
   }
 
   // ---------------- IntroDB (everything that isn't anime) ----------------
