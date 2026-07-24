@@ -158,6 +158,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _open() async {
     setState(() => playerError = null);
     try {
+      // Track preferences must be set BEFORE the file loads - the engine
+      // picks its tracks at load time. Empty means "let the release
+      // decide", which is the old behaviour.
+      final alang = (Db.setting('pref_alang') ?? '').trim();
+      final slang = (Db.setting('pref_slang') ?? '').trim();
+      if (alang.isNotEmpty) await _setMpv('alang', alang);
+      if (slang.isNotEmpty) await _setMpv('slang', slang);
+      await _setMpv('subs-with-matching-audio',
+          Db.setting('subs_always') == '1' ? 'yes' : 'no');
       final isLocal = !widget.url.startsWith('http');
       await player.open(
           Media(widget.url,

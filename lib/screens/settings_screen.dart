@@ -28,6 +28,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final stremioEmailCtrl = TextEditingController();
   late final stremioPassCtrl = TextEditingController();
   late final anilistCtrl = TextEditingController();
+  late final alangCtrl =
+      TextEditingController(text: Db.setting('pref_alang') ?? '');
+  late final slangCtrl =
+      TextEditingController(text: Db.setting('pref_slang') ?? '');
   late final dirCtrl =
       TextEditingController(text: Db.setting('download_dir') ?? '');
   late final cacheCtrl =
@@ -43,6 +47,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     stremioEmailCtrl.dispose();
     stremioPassCtrl.dispose();
     anilistCtrl.dispose();
+    alangCtrl.dispose();
+    slangCtrl.dispose();
     idCtrl.dispose();
     secretCtrl.dispose();
     super.dispose();
@@ -323,6 +329,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(stremioNote!, style: hint)),
             ]),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text('PLAYBACK',
+            style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      'Which track to start with, by language code — '
+                      'comma-separated, best first (e.g. "jpn,ja,eng"). '
+                      'Leave empty to let each release decide. Add-on '
+                      'language settings choose which streams you are '
+                      'offered; these choose the track inside the file.',
+                      style: hint),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: alangCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'Audio languages'),
+                        onChanged: (v) =>
+                            Db.setSetting('pref_alang', v.trim()),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: slangCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'Subtitle languages'),
+                        onChanged: (v) =>
+                            Db.setSetting('pref_slang', v.trim()),
+                      ),
+                    ),
+                  ]),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Always show subtitles'),
+                    subtitle: Text(
+                        'Even when the audio already matches your '
+                        'subtitle language.',
+                        style: hint),
+                    value: Db.setting('subs_always') == '1',
+                    onChanged: (v) {
+                      Db.setSetting('subs_always', v ? '1' : '0');
+                      setState(() {});
+                    },
+                  ),
+                ]),
           ),
         ),
         const SizedBox(height: 20),
