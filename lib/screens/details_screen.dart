@@ -117,17 +117,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
     );
   }
 
-  Future<void> _downloadSeason() async {
-    final m = meta;
-    if (m == null || season == null) return;
-    final eps = (m['videos'] as List? ?? [])
-        .where((v) => v['season'] == season)
-        .toList()
-      ..sort((a, b) =>
-          ((a['episode'] ?? 0) as num).compareTo((b['episode'] ?? 0) as num));
-    await _batchDownload(eps);
-  }
-
   Future<void> _downloadSelected() async {
     final m = meta;
     if (m == null || selected.isEmpty) return;
@@ -237,6 +226,26 @@ class _DetailsScreenState extends State<DetailsScreen> {
     return seasons.firstWhere((x) => x > 0,
         orElse: () => seasons.isEmpty ? 1 : seasons.first);
   }
+
+  /// Bytes for a stream: the standard hint first, then any size written
+  /// into the label (most add-ons put one there).
+  static int? _bytesOf(Map st) {
+    final v = st['behaviorHints']?['videoSize'];
+    if (v is num && v > 0) return v.toInt();
+    final t = '${st['name'] ?? ''} ${st['title'] ?? ''} '
+        '${st['description'] ?? ''}';
+    final m = RegExp(r'([0-9]+(?:[.,][0-9]+)?)\s*(GB|GiB|MB|MiB)',
+            caseSensitive: false)
+        .firstMatch(t);
+    if (m == null) return null;
+    final n = double.tryParse(m.group(1)!.replaceAll(',', '.')) ?? 0;
+    final gig = m.group(2)!.toLowerCase().startsWith('g');
+    return (n * (gig ? 1073741824 : 1048576)).round();
+  }
+
+  static String _fmtBytes(num b) => b >= 1073741824
+      ? '${(b / 1073741824).toStringAsFixed(1)} GB'
+      : '${(b / 1048576).round()} MB';
 
   Future<void> _batchDownload(List eps) async {
     final m = meta;
@@ -364,6 +373,27 @@ class _DetailsScreenState extends State<DetailsScreen> {
       return;
     }
 
+    // What will this actually cost? Average the matching stream's size
+    // across the episodes we already looked at.
+    final estBytes = <String, int>{};
+    for (final q in found) {
+      var sum = 0, cnt = 0;
+      for (final flat in perEp) {
+        for (final st in flat) {
+          final g = '${st['behaviorHints']?['bingeGroup'] ?? ''}';
+          if (g == q || _matchesQuality(textOf(st), q)) {
+            final b = _bytesOf(st);
+            if (b != null) {
+              sum += b;
+              cnt++;
+            }
+            break;
+          }
+        }
+      }
+      if (cnt > 0) estBytes[q] = sum ~/ cnt;
+    }
+
     var quality = Db.setting('batch_quality') ?? '';
     if (!found.contains(quality)) {
       quality = found.first;
@@ -388,6 +418,16 @@ class _DetailsScreenState extends State<DetailsScreen> {
                       onSelected: (_) => setD(() => quality = q),
                     ),
                 ]),
+                const SizedBox(height: 8),
+                Text(
+                  estBytes[quality] == null
+                      ? 'Size unknown for this source.'
+                      : '≈ ${_fmtBytes(estBytes[quality]!)} per episode · '
+                          'about ${_fmtBytes(estBytes[quality]! * eps.length)} '
+                          'for ${eps.length}',
+                  style: TextStyle(
+                      fontSize: 12, color: Theme.of(context).hintColor),
+                ),
                 const SizedBox(height: 12),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
@@ -695,10 +735,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
                     icon: const Icon(Icons.checklist, size: 20),
                     tooltip: 'Select episodes',
                     onPressed: () => setState(() => selecting = true)),
-                TextButton.icon(
-                    icon: const Icon(Icons.download_outlined, size: 18),
-                    label: const Text('Download season'),
-                    onPressed: _downloadSeason),
               ] else ...[
                 TextButton(
                     onPressed: () => setState(() => selected
@@ -984,6 +1020,12 @@ class _StreamSheetState extends State<_StreamSheet> {
                     title: Text(s['description'] ?? s['title'] ?? s['url'] ?? '',
                         style: const TextStyle(
                             fontFamily: 'monospace', fontSize: 12)),
+                    subtitle: _bytesOf(s) == null
+                        ? null
+                        : Text(_fmtBytes(_bytesOf(s)!),
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(context).hintColor)),
                     trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                       IconButton(
                           icon: const Icon(Icons.download_outlined, size: 20),

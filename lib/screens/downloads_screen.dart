@@ -71,6 +71,7 @@ class DownloadsScreen extends StatelessWidget {
         final done =
             Downloads.all().where((d) => d['status'] == 'done').toList();
         final active = Downloads.active.values.toList();
+        final waiting = List<Map<String, dynamic>>.from(Downloads.queued);
 
         // Group by title; fall back to the offline meta cache for display.
         final groups = <String, List<Map>>{};
@@ -78,6 +79,7 @@ class DownloadsScreen extends StatelessWidget {
           groups.putIfAbsent('${d['type']}|${d['itemId']}', () => []).add(d);
         }
 
+        final busy = active.isNotEmpty || waiting.isNotEmpty;
         return ListView(
           padding: const EdgeInsets.all(18),
           children: [
@@ -85,6 +87,72 @@ class DownloadsScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             if (active.isNotEmpty) ...[
+              if (busy)
+
+                Padding(
+
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+
+                  child: Row(children: [
+
+                    Text('${active.length} downloading · ${waiting.length} queued',
+
+                        style: const TextStyle(fontSize: 12, color: Colors.white54)),
+
+                    const Spacer(),
+
+                    TextButton.icon(
+
+                      icon: const Icon(Icons.stop_circle_outlined, size: 18),
+
+                      label: const Text('Stop all'),
+
+                      onPressed: Downloads.cancelAll,
+
+                    ),
+
+                  ]),
+
+                ),
+
+              if (waiting.isNotEmpty) ...[
+
+                const Padding(
+
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+
+                  child: Text('QUEUED',
+
+                      style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
+
+                ),
+
+                for (final j in waiting)
+
+                  ListTile(
+
+                    dense: true,
+
+                    leading: const Icon(Icons.schedule, size: 18),
+
+                    title: Text('${j['label'] ?? j['key']}',
+
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+
+                    trailing: IconButton(
+
+                      icon: const Icon(Icons.close, size: 18),
+
+                      tooltip: 'Remove from queue',
+
+                      onPressed: () => Downloads.unqueue('${j['key']}'),
+
+                    ),
+
+                  ),
+
+              ],
+
               const Text('DOWNLOADING',
                   style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
               for (final task in active)

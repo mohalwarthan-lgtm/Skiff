@@ -22,6 +22,44 @@ class DownloadTask extends ChangeNotifier {
 
 class Downloads {
   static final Map<String, DownloadTask> active = {};
+
+  /// Jobs waiting their turn. Downloads run a couple at a time so a
+  /// 12-episode batch is a manageable list, not a stampede.
+  static const maxConcurrent = 2;
+  static final List<Map<String, dynamic>> queued = [];
+
+  static void _pump() {
+    while (active.length < maxConcurrent && queued.isNotEmpty) {
+      final j = queued.removeAt(0);
+      revision.value++;
+      start(
+        type: j['type'],
+        itemId: j['itemId'],
+        videoId: j['videoId'],
+        url: j['url'],
+        displayName: j['displayName'],
+        videoTitle: j['videoTitle'],
+        poster: j['poster'],
+        headers: (j['headers'] as Map).cast<String, String>(),
+        subs: (j['subs'] as List).cast<Map>(),
+      );
+    }
+  }
+
+  /// Drop one waiting job.
+  static void unqueue(String key) {
+    queued.removeWhere((j) => j['key'] == key);
+    revision.value++;
+  }
+
+  /// Stop everything: clear the queue and cancel what's in flight.
+  static void cancelAll() {
+    queued.clear();
+    for (final t in active.values.toList()) {
+      t.cancel();
+    }
+    revision.value++;
+  }
   static final ValueNotifier<int> revision = ValueNotifier(0); // UI refresh tick
 
   static String key(String type, String itemId, String videoId) =>
@@ -36,13 +74,36 @@ class Downloads {
   static List<Map> all() => Db.downloads.values.cast<Map>().toList()
     ..sort((a, b) => (b['createdAt'] ?? 0).compareTo(a['createdAt'] ?? 0));
 
+  /// Where downloads go when no custom folder is set.
+  ///
+  /// Android: app-specific EXTERNAL storage
+  /// (Android/data/<package>/files/downloads) - visible over USB and to
+  /// the device's own file manager, and needs no permission. Internal
+  /// support storage would be invisible without root.
+  static Future<Directory> defaultRoot() async {
+    if (Platform.isAndroid) {
+      try {
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) return ext;
+      } catch (_) {}
+    }
+    return getApplicationSupportDirectory();
+  }
+
+  /// The folder new downloads land in, resolved for display.
+  static Future<String> currentDir() async {
+    final custom = Db.setting('download_dir');
+    if (custom != null && custom.trim().isNotEmpty) return custom.trim();
+    return '${(await defaultRoot()).path}/downloads';
+  }
+
   static Future<Directory> _dirFor(String itemId) async {
     final custom = Db.setting('download_dir');
     final Directory base;
     if (custom != null && custom.trim().isNotEmpty) {
       base = Directory(custom.trim());
     } else {
-      final root = await getApplicationSupportDirectory();
+      final root = await defaultRoot();
       base = Directory('${root.path}/downloads');
     }
     final dir = Directory('${base.path}/$itemId');
@@ -101,6 +162,24 @@ class Downloads {
     }
     final k = key(type, itemId, videoId);
     if (active.containsKey(k)) return;
+    if (queued.any((j) => j['key'] == k)) return;
+    if (active.length >= maxConcurrent) {
+      queued.add({
+        'key': k,
+        'type': type,
+        'itemId': itemId,
+        'videoId': videoId,
+        'url': url,
+        'displayName': displayName,
+        'videoTitle': videoTitle,
+        'poster': poster,
+        'headers': headers,
+        'subs': subs,
+        'label': videoTitle.isEmpty ? displayName : '$displayName — $videoTitle',
+      });
+      revision.value++;
+      return;
+    }
     final task = DownloadTask(
         k, videoTitle.isEmpty ? displayName : '$displayName — $videoTitle');
     active[k] = task;
@@ -173,6 +252,7 @@ class Downloads {
     } finally {
       task.notifyListeners();
       active.remove(k);
+      _pump();
       revision.value++;
     }
   }

@@ -11,6 +11,7 @@ import '../services/stremio.dart';
 import '../services/addons.dart';
 import '../config.dart';
 import '../services/db.dart';
+import '../services/downloads.dart';
 import '../services/trakt.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -412,7 +413,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) ...[
         const Text('STORAGE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
@@ -430,6 +430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(width: 10),
+              if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: FilledButton.tonal(
@@ -446,6 +447,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ]),
+            const SizedBox(height: 8),
+            FutureBuilder<String>(
+              future: Downloads.currentDir(),
+              builder: (_, snap) => Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText(
+                    'Downloads are in:\n${snap.data ?? '…'}',
+                    style: hint),
+              ),
+            ),
             const SizedBox(height: 10),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(
@@ -486,7 +497,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        ],
         const Text('PROFILE', style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
