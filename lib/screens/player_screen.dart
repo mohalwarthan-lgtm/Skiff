@@ -179,65 +179,100 @@ class _PlayerScreenState extends State<PlayerScreen>
     // preferred languages - Stremio turns one on for you; the app only
     // listed them. Empty preference falls back to any add-on sub, then
     // any embedded one, so subtitles appear by default like before.
-    var _pickedSub = false;
+    // Auto-enable the subtitle matching the viewer's preferred language,
+    // exactly like Stremio's own 'subtitlesLanguage' setting (which lives
+    // in the app, NOT the add-on - the add-on only supplies the list).
+    // The old code latched its one-shot guard on the FIRST tracks event,
+    // which fires before add-on subs load, so it always no-op'd. Now it
+    // only latches once it has actually SET a track, and re-tries as more
+    // sources arrive.
+    var _subDone = false;
     Future<void> _autoSub() async {
-      if (_pickedSub) return;
-      _pickedSub = true;
-      final pref = (Db.setting('pref_slang') ?? '')
+      if (_subDone) return;
+      // Default like Stremio: the device locale's language, English as a
+      // universal fallback. An Arabic-locale device therefore auto-selects
+      // Arabic with nothing configured - matching Stremio exactly - while
+      // an explicit Settings value always wins.
+      final set = Db.setting('pref_slang');
+      final fallback =
+          '${WidgetsBinding.instance.platformDispatcher.locale.languageCode},en';
+      final pref = ((set == null || set.trim().isEmpty) ? fallback : set)
           .split(',')
           .map((e) => e.trim().toLowerCase())
           .where((e) => e.isNotEmpty)
           .toList();
-      int rankLang(String l) {
-        l = l.toLowerCase();
-        if (l.isEmpty) return 998;
-        for (var i = 0; i < pref.length; i++) {
-          if (l == pref[i] || l.startsWith(pref[i]) || pref[i].startsWith(l)) {
-            return i;
-          }
-        }
-        return 997;
+      if (pref.isEmpty) return; // 'None' - leave subtitles off
+
+      // Normalise 2- and 3-letter codes and English names to one key so
+      // 'ar'/'ara'/'arabic' and 'en'/'eng'/'english' all match.
+      String norm(String l) {
+        l = l.toLowerCase().trim();
+        const map = {
+          'ara': 'ar', 'arabic': 'ar',
+          'eng': 'en', 'english': 'en',
+          'jpn': 'ja', 'jp': 'ja', 'japanese': 'ja',
+          'spa': 'es', 'spanish': 'es',
+          'fre': 'fr', 'fra': 'fr', 'french': 'fr',
+          'ger': 'de', 'deu': 'de', 'german': 'de',
+          'por': 'pt', 'portuguese': 'pt',
+          'rus': 'ru', 'russian': 'ru',
+          'chi': 'zh', 'zho': 'zh', 'chinese': 'zh',
+          'kor': 'ko', 'korean': 'ko',
+          'tur': 'tr', 'turkish': 'tr',
+          'ita': 'it', 'italian': 'it',
+          'hin': 'hi', 'hindi': 'hi',
+        };
+        return map[l] ?? (l.length > 2 ? l.substring(0, 2) : l);
       }
-      // best add-on subtitle (already language-ranked by Addons)
-      final addon = _dedupedAddonSubs;
+      final want = pref.map(norm).toList();
+      int rank(String lang) {
+        final k = norm(lang);
+        final i = want.indexOf(k);
+        return i < 0 ? 999 : i;
+      }
+
+      // Gather candidates from every source with their real language.
       Map? bestAddon;
       var bestAddonRank = 999;
-      for (final a in addon) {
-        final r = rankLang('${a['lang'] ?? ''}');
+      for (final a in _dedupedAddonSubs) {
+        final r = rank('${a['lang'] ?? ''}');
         if (r < bestAddonRank) {
           bestAddonRank = r;
           bestAddon = a;
         }
       }
-      // best embedded subtitle
-      final embedded = player.state.tracks.subtitle
-          .where((t) => t.id != 'auto' && t.id != 'no')
-          .toList();
       SubtitleTrack? bestEmb;
       var bestEmbRank = 999;
-      for (final t in embedded) {
-        final r = rankLang('${t.language ?? ''}');
+      for (final t in player.state.tracks.subtitle) {
+        if (t.id == 'auto' || t.id == 'no') continue;
+        final r = rank('${t.language ?? ''}');
         if (r < bestEmbRank) {
           bestEmbRank = r;
           bestEmb = t;
         }
       }
-      // choose: whichever ranks better; add-on wins ties (external subs
-      // are usually the reason a viewer set a preference).
-      if (bestAddon != null && bestAddonRank <= bestEmbRank) {
+
+      // Nothing matched yet - wait for more sources rather than latching.
+      if (bestAddonRank == 999 && bestEmbRank == 999) return;
+
+      _subDone = true;
+      if (bestAddonRank <= bestEmbRank && bestAddon != null) {
         await player.setSubtitleTrack(SubtitleTrack.uri(
-            bestAddon['url'] as String,
-            language: bestAddon['lang'] as String?));
+            '${bestAddon['url']}',
+            language: '${bestAddon['lang'] ?? ''}'));
       } else if (bestEmb != null) {
         await player.setSubtitleTrack(bestEmb);
       }
     }
 
+    // Fire as tracks parse AND as add-on subs settle in - _autoSub only
+    // commits when it finds a real match, so repeated calls are safe.
     player.stream.tracks.listen((_) => _autoSub());
-    // Add-on subs aren't tracks, so also try once shortly after load.
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) _autoSub();
-    });
+    for (final ms in [800, 2000, 4000]) {
+      Future.delayed(Duration(milliseconds: ms), () {
+        if (mounted) _autoSub();
+      });
+    }
 
     // Enforce the audio-language preference on the actual track list once
     // it's known - mpv's alang hint is unreliable for network streams,

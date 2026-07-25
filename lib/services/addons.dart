@@ -17,8 +17,17 @@ class Addons {
   static String _encodeId(String id) =>
       id.split(':').map(Uri.encodeComponent).join(':');
 
-  static Future<Map<String, dynamic>> _getJson(Uri url) async {
-    final res = await http.get(url).timeout(const Duration(seconds: 30));
+  /// Stremio sends a User-Agent on every add-on request; some add-ons
+  /// (and the proxies AIOStreams fans out to) behave differently without
+  /// one. Timeout is per-resource: stream resolution with server-side
+  /// filters (e.g. requiredSubtitles) is far slower than meta/catalog, so
+  /// it gets longer to answer instead of being cut off and swallowed.
+  static Future<Map<String, dynamic>> _getJson(Uri url,
+      {Duration timeout = const Duration(seconds: 30)}) async {
+    final res = await http.get(url, headers: {
+      'User-Agent': 'Stremio',
+      'Accept': 'application/json',
+    }).timeout(timeout);
     if (res.statusCode != 200) {
       throw 'HTTP ${res.statusCode} from ${url.host}';
     }
@@ -69,8 +78,9 @@ class Addons {
   static Future<List> fetchStreams(
       String transportUrl, String type, String id) async {
     final base = baseUrl(transportUrl);
-    final json =
-        await _getJson(Uri.parse('$base/stream/$type/${_encodeId(id)}.json'));
+    final json = await _getJson(
+        Uri.parse('$base/stream/$type/${_encodeId(id)}.json'),
+        timeout: const Duration(seconds: 60));
     return json['streams'] as List? ?? [];
   }
 
@@ -220,26 +230,9 @@ class Addons {
         } catch (_) {}
       }
     }
-    // Rank by the viewer's preferred subtitle languages (Settings ->
-    // Playback), best first, so the default pick matches them rather than
-    // whatever order the add-on returned.
-    final pref = (Db.setting('pref_slang') ?? '')
-        .split(',')
-        .map((e) => e.trim().toLowerCase())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (pref.isNotEmpty) {
-      int rank(Map s) {
-        final lang = '${s['lang'] ?? s['language'] ?? ''}'.toLowerCase();
-        if (lang.isEmpty) return pref.length + 1;
-        for (var i = 0; i < pref.length; i++) {
-          final p = pref[i];
-          if (lang == p || lang.startsWith(p) || p.startsWith(lang)) return i;
-        }
-        return pref.length;
-      }
-      out.sort((a, b) => rank(a).compareTo(rank(b)));
-    }
+    // Stremio preserves the add-on's own subtitle order in the menu and
+    // picks the default separately (the player does that here). No
+    // re-ranking - the add-on already ordered them per the user's config.
     return out;
   }
 }
