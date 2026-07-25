@@ -10,6 +10,13 @@ import 'db.dart';
 /// Nothing here is specific to any addon — AIOMetadata, AIOStreams, or any
 /// other protocol-compliant addon works identically.
 class Addons {
+  /// Stremio ids carry raw colons (tt123:1:5). Uri.encodeComponent would
+  /// turn them into %3A and the add-on fails to parse the id - which is
+  /// why streams show in Stremio but not here. Encode each colon segment,
+  /// rejoin with a literal ':'.
+  static String _encodeId(String id) =>
+      id.split(':').map(Uri.encodeComponent).join(':');
+
   static Future<Map<String, dynamic>> _getJson(Uri url) async {
     final res = await http.get(url).timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
@@ -46,8 +53,8 @@ class Addons {
       [Map<String, String> extra = const {}]) async {
     final base = baseUrl(transportUrl);
     final path = extra.isEmpty
-        ? '$base/catalog/$type/${Uri.encodeComponent(id)}.json'
-        : '$base/catalog/$type/${Uri.encodeComponent(id)}/${_extraSeg(extra)}.json';
+        ? '$base/catalog/$type/${_encodeId(id)}.json'
+        : '$base/catalog/$type/${_encodeId(id)}/${_extraSeg(extra)}.json';
     return (await _getJson(Uri.parse(path)))['metas'] as List? ?? [];
   }
 
@@ -55,7 +62,7 @@ class Addons {
       String transportUrl, String type, String id) async {
     final base = baseUrl(transportUrl);
     final json =
-        await _getJson(Uri.parse('$base/meta/$type/${Uri.encodeComponent(id)}.json'));
+        await _getJson(Uri.parse('$base/meta/$type/${_encodeId(id)}.json'));
     return json['meta'] as Map<String, dynamic>? ?? {};
   }
 
@@ -63,7 +70,7 @@ class Addons {
       String transportUrl, String type, String id) async {
     final base = baseUrl(transportUrl);
     final json =
-        await _getJson(Uri.parse('$base/stream/$type/${Uri.encodeComponent(id)}.json'));
+        await _getJson(Uri.parse('$base/stream/$type/${_encodeId(id)}.json'));
     return json['streams'] as List? ?? [];
   }
 
@@ -71,7 +78,7 @@ class Addons {
       String transportUrl, String type, String id) async {
     final base = baseUrl(transportUrl);
     final json = await _getJson(
-        Uri.parse('$base/subtitles/$type/${Uri.encodeComponent(id)}.json'));
+        Uri.parse('$base/subtitles/$type/${_encodeId(id)}.json'));
     return json['subtitles'] as List? ?? [];
   }
 
@@ -205,6 +212,26 @@ class Addons {
           }
         } catch (_) {}
       }
+    }
+    // Rank by the viewer's preferred subtitle languages (Settings ->
+    // Playback), best first, so the default pick matches them rather than
+    // whatever order the add-on returned.
+    final pref = (Db.setting('pref_slang') ?? '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (pref.isNotEmpty) {
+      int rank(Map s) {
+        final lang = '${s['lang'] ?? s['language'] ?? ''}'.toLowerCase();
+        if (lang.isEmpty) return pref.length + 1;
+        for (var i = 0; i < pref.length; i++) {
+          final p = pref[i];
+          if (lang == p || lang.startsWith(p) || p.startsWith(lang)) return i;
+        }
+        return pref.length;
+      }
+      out.sort((a, b) => rank(a).compareTo(rank(b)));
     }
     return out;
   }

@@ -175,6 +175,35 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
+    // Enforce the audio-language preference on the actual track list once
+    // it's known - mpv's alang hint is unreliable for network streams,
+    // so pick explicitly, mirroring how subtitles are ranked.
+    var _pickedAudio = false;
+    player.stream.tracks.listen((t) async {
+      if (_pickedAudio) return;
+      final pref = (Db.setting('pref_alang') ?? '')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (pref.isEmpty) return;
+      final audios =
+          t.audio.where((a) => a.id != 'auto' && a.id != 'no').toList();
+      if (audios.length < 2) return; // nothing to choose
+      int rank(AudioTrack a) {
+        final l = '${a.language ?? ''} ${a.title ?? ''}'.toLowerCase();
+        for (var i = 0; i < pref.length; i++) {
+          if (l.contains(pref[i])) return i;
+        }
+        return pref.length;
+      }
+      audios.sort((a, b) => rank(a).compareTo(rank(b)));
+      if (rank(audios.first) < pref.length) {
+        _pickedAudio = true;
+        await player.setAudioTrack(audios.first);
+      }
+    });
+
     player.stream.duration.listen((d) {
       if (!resumed && d.inSeconds > 0) {
         resumed = true;
