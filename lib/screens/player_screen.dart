@@ -729,12 +729,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       await player.setSubtitleTrack(SubtitleTrack.no());
       return;
     }
-    // add-on subtitle in the wanted language
+    // add-on subtitle in the wanted language (online playback)
     for (final a in _dedupedAddonSubs) {
       if (_langKey('${a['lang'] ?? ''}') == want) {
         _defSubDone = true;
         await player.setSubtitleTrack(
             SubtitleTrack.uri('${a['url']}', language: '${a['lang'] ?? ''}'));
+        return;
+      }
+    }
+    // downloaded sidecar subtitle in the wanted language (offline playback)
+    for (final l in widget.localSubs) {
+      if (_langKey('${l['lang'] ?? ''}') == want) {
+        _defSubDone = true;
+        await player.setSubtitleTrack(SubtitleTrack.uri(
+            'file:///${l['path']}',
+            language: '${l['lang'] ?? ''}'));
         return;
       }
     }

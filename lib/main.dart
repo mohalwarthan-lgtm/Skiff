@@ -179,20 +179,23 @@ class _ShellState extends State<Shell> with WindowListener {
 
   @override
   Future<void> onWindowClose() async {
+    // Hard guarantee first: whatever hangs below - a stuck hide(), a
+    // native player thread, a wedged destroy() - this watchdog still
+    // terminates the process, so nothing lingers in Task Manager.
+    Future.delayed(const Duration(seconds: 4), () => exit(0));
     // Vanish instantly, flush the playback position to Trakt behind the
-    // scenes, then really exit - close feels immediate either way.
+    // scenes, then really exit - close feels immediate either way. Every
+    // step is time-boxed so none can stall the exit.
     try {
-      await windowManager.hide();
+      await windowManager.hide().timeout(const Duration(seconds: 1));
     } catch (_) {}
     try {
       await (PlayerFlush.flush?.call() ?? Future.value())
           .timeout(const Duration(seconds: 3));
     } catch (_) {}
     try {
-      await windowManager.destroy();
+      await windowManager.destroy().timeout(const Duration(seconds: 1));
     } catch (_) {}
-    // The one guarantee that beats every teardown quirk: no hidden
-    // zombie processes lingering in Task Manager.
     exit(0);
   }
 
