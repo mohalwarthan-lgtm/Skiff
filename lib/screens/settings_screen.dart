@@ -28,10 +28,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final stremioEmailCtrl = TextEditingController();
   late final stremioPassCtrl = TextEditingController();
   late final anilistCtrl = TextEditingController();
-  late final alangCtrl =
-      TextEditingController(text: Db.setting('pref_alang') ?? '');
-  late final slangCtrl =
-      TextEditingController(text: Db.setting('pref_slang') ?? '');
   late final dirCtrl =
       TextEditingController(text: Db.setting('download_dir') ?? '');
   late final cacheCtrl =
@@ -47,8 +43,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     stremioEmailCtrl.dispose();
     stremioPassCtrl.dispose();
     anilistCtrl.dispose();
-    alangCtrl.dispose();
-    slangCtrl.dispose();
     idCtrl.dispose();
     secretCtrl.dispose();
     super.dispose();
@@ -332,7 +326,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        const Text('PLAYBACK',
+        const Text('SUBTITLES',
             style: TextStyle(fontSize: 12, letterSpacing: 1.5)),
         Card(
           child: Padding(
@@ -340,34 +334,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      'Which track to start with, by language code — '
-                      'comma-separated, best first (e.g. "jpn,ja,eng"). '
-                      'Leave empty to let each release decide. Add-on '
-                      'language settings choose which streams you are '
-                      'offered; these choose the track inside the file.',
+                      'Default subtitle language. Applied automatically '
+                      'when a video starts — to an embedded track or an '
+                      'add-on subtitle in that language. "None" leaves '
+                      'subtitles off.',
                       style: hint),
                   const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: alangCtrl,
-                        decoration: const InputDecoration(
-                            labelText: 'Audio languages'),
-                        onChanged: (v) =>
-                            Db.setSetting('pref_alang', v.trim()),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: slangCtrl,
-                        decoration: const InputDecoration(
-                            labelText: 'Subtitle languages'),
-                        onChanged: (v) =>
-                            Db.setSetting('pref_slang', v.trim()),
-                      ),
-                    ),
-                  ]),
+                  DropdownButtonFormField<String>(
+                    value: Db.setting('sub_lang') ?? 'en',
+                    decoration:
+                        const InputDecoration(labelText: 'Default subtitles'),
+                    items: const [
+                      DropdownMenuItem(value: 'off', child: Text('None')),
+                      DropdownMenuItem(value: 'en', child: Text('English')),
+                      DropdownMenuItem(value: 'ar', child: Text('Arabic')),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      Db.setSetting('sub_lang', v);
+                      setState(() {});
+                    },
+                  ),
                 ]),
           ),
         ),
