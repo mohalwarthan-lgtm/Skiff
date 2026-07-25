@@ -974,6 +974,16 @@ class _StreamSheetState extends State<_StreamSheet> {
     }
   }
 
+  /// videoSize + filename let subtitle add-ons match the exact release.
+  Map<String, String> _subExtra(Map s) {
+    final e = <String, String>{};
+    final size = s['behaviorHints']?['videoSize'];
+    if (size is num && size > 0) e['videoSize'] = size.toInt().toString();
+    final fn = s['behaviorHints']?['filename'];
+    if (fn is String && fn.isNotEmpty) e['filename'] = fn;
+    return e;
+  }
+
   Map<String, String> _headers(Map s) {
     final h = s['behaviorHints']?['proxyHeaders']?['request'];
     return h is Map ? h.map((k, v) => MapEntry('$k', '$v')) : {};
@@ -982,7 +992,8 @@ class _StreamSheetState extends State<_StreamSheet> {
   Future<void> _play(Map s) async {
     try {
       final url = await _resolveUrl(s);
-      final subs = await Addons.subtitlesFor(widget.type, widget.videoId)
+      final subs = await Addons.subtitlesFor(widget.type, widget.videoId,
+              extra: _subExtra(s))
           .catchError((_) => <Map>[]);
       if (!mounted) return;
       Navigator.of(context).pop();

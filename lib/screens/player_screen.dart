@@ -175,6 +175,70 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
+    // Auto-enable the best subtitle (embedded or add-on) by the viewer's
+    // preferred languages - Stremio turns one on for you; the app only
+    // listed them. Empty preference falls back to any add-on sub, then
+    // any embedded one, so subtitles appear by default like before.
+    var _pickedSub = false;
+    Future<void> _autoSub() async {
+      if (_pickedSub) return;
+      _pickedSub = true;
+      final pref = (Db.setting('pref_slang') ?? '')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      int rankLang(String l) {
+        l = l.toLowerCase();
+        if (l.isEmpty) return 998;
+        for (var i = 0; i < pref.length; i++) {
+          if (l == pref[i] || l.startsWith(pref[i]) || pref[i].startsWith(l)) {
+            return i;
+          }
+        }
+        return 997;
+      }
+      // best add-on subtitle (already language-ranked by Addons)
+      final addon = _dedupedAddonSubs;
+      Map? bestAddon;
+      var bestAddonRank = 999;
+      for (final a in addon) {
+        final r = rankLang('${a['lang'] ?? ''}');
+        if (r < bestAddonRank) {
+          bestAddonRank = r;
+          bestAddon = a;
+        }
+      }
+      // best embedded subtitle
+      final embedded = player.state.tracks.subtitle
+          .where((t) => t.id != 'auto' && t.id != 'no')
+          .toList();
+      SubtitleTrack? bestEmb;
+      var bestEmbRank = 999;
+      for (final t in embedded) {
+        final r = rankLang('${t.language ?? ''}');
+        if (r < bestEmbRank) {
+          bestEmbRank = r;
+          bestEmb = t;
+        }
+      }
+      // choose: whichever ranks better; add-on wins ties (external subs
+      // are usually the reason a viewer set a preference).
+      if (bestAddon != null && bestAddonRank <= bestEmbRank) {
+        await player.setSubtitleTrack(SubtitleTrack.uri(
+            bestAddon['url'] as String,
+            language: bestAddon['lang'] as String?));
+      } else if (bestEmb != null) {
+        await player.setSubtitleTrack(bestEmb);
+      }
+    }
+
+    player.stream.tracks.listen((_) => _autoSub());
+    // Add-on subs aren't tracks, so also try once shortly after load.
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) _autoSub();
+    });
+
     // Enforce the audio-language preference on the actual track list once
     // it's known - mpv's alang hint is unreliable for network streams,
     // so pick explicitly, mirroring how subtitles are ranked.

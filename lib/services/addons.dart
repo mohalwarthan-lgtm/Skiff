@@ -75,10 +75,15 @@ class Addons {
   }
 
   static Future<List> fetchSubtitles(
-      String transportUrl, String type, String id) async {
+      String transportUrl, String type, String id,
+      {Map<String, String> extra = const {}}) async {
     final base = baseUrl(transportUrl);
+    // Stremio passes videoSize + filename so subtitle add-ons can match
+    // the exact release (and thus return the right languages). When we
+    // have them, include them exactly as the protocol specifies.
+    final seg = extra.isEmpty ? '' : '/${_extraSeg(extra)}';
     final json = await _getJson(
-        Uri.parse('$base/subtitles/$type/${_encodeId(id)}.json'));
+        Uri.parse('$base/subtitles/$type/${_encodeId(id)}$seg.json'));
     return json['subtitles'] as List? ?? [];
   }
 
@@ -201,13 +206,15 @@ class Addons {
     return (await Future.wait(futures)).whereType<Map>().toList();
   }
 
-  static Future<List<Map>> subtitlesFor(String type, String id) async {
+  static Future<List<Map>> subtitlesFor(String type, String id,
+      {Map<String, String> extra = const {}}) async {
     final out = <Map>[];
     for (final a in enabled()) {
       final m = a['manifest'] as Map;
       if (supports(m, 'subtitles', type, id)) {
         try {
-          for (final s in await fetchSubtitles(a['transportUrl'], type, id)) {
+          for (final s in await fetchSubtitles(a['transportUrl'], type, id,
+              extra: extra)) {
             if (s is Map && s['url'] != null) out.add(s.cast<String, dynamic>());
           }
         } catch (_) {}
