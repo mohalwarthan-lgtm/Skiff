@@ -68,25 +68,6 @@ jobs:
           channel: stable
       - name: Ensure Android platform files
         run: flutter create --platforms=android --project-name skiffbox .
-      - name: Modernise Android Kotlin/Gradle (for transitive deps like jni)
-        run: |
-          # jni 1.0.x ships a Gradle file needing a newer Kotlin plugin
-          # than the Flutter template pins ("Could not find method
-          # kotlin()"). Raise the Kotlin (and AGP) plugin versions in
-          # whichever file the template declared them.
-          SG=android/settings.gradle
-          BG=android/build.gradle
-          for F in "$SG" "$BG"; do
-            [ -f "$F" ] || continue
-            # plugins DSL: id "org.jetbrains.kotlin.android" version "X.Y.Z"
-            sed -i -E 's/(org\.jetbrains\.kotlin\.android" version ")[0-9.]+"/\12.1.0"/' "$F"
-            sed -i -E "s/(org\.jetbrains\.kotlin\.android' version ')[0-9.]+'/\12.1.0'/" "$F"
-            sed -i -E 's/(com\.android\.application" version ")[0-9.]+"/\18.6.0"/' "$F"
-            # legacy: ext.kotlin_version = "X.Y.Z"
-            sed -i -E "s/(kotlin_version *= *['\"])[0-9.]+(['\"])/\12.1.0\2/" "$F"
-          done
-          echo "----- kotlin / AGP versions after bump -----"
-          grep -REn "kotlin.android|kotlin_version|com.android.application" android/settings.gradle android/build.gradle || true
       - name: Internet permission (release manifest)
         run: |
           # Flutter's release template omits it; without this the app
@@ -122,6 +103,31 @@ jobs:
           grep -q leanback $M && grep -q LEANBACK_LAUNCHER $M
       - name: Dependencies
         run: flutter pub get
+      - name: Fix jni Gradle incompatibility (surgical + self-documenting)
+        run: |
+          echo "----- which packages pull jni (from the resolved graph) -----"
+          flutter pub deps --style=compact | grep -i "jni" || echo "jni not in graph"
+          shopt -s nullglob
+          for BG in $HOME/.pub-cache/hosted/pub.dev/jni-*/android/build.gradle; do
+            echo "----- BEFORE: $BG (lines 70-100) -----"
+            sed -n '70,100p' "$BG"
+            # Comment out the Groovy `kotlin { ... }` block (brace-counted)
+            # - the construct the template Gradle cannot evaluate.
+            awk 'BEGIN{b=0;d=0}
+              {
+                s=$0; sub(/^[[:space:]]+/,"",s)
+                if(b==0 && s ~ /^kotlin[[:space:]]*\{/){b=1}
+                if(b==1){
+                  t=$0; o=gsub(/\{/,"{",t); c=gsub(/\}/,"}",t); d+=o-c
+                  print "// [skiffbox-ci] " $0
+                  if(d<=0) b=0
+                  next
+                }
+                print
+              }' "$BG" > "$BG.tmp" && mv "$BG.tmp" "$BG"
+            echo "----- AFTER: $BG (lines 70-100) -----"
+            sed -n '70,100p' "$BG"
+          done
       - name: Build APK (release)
         run: >
           flutter build apk --release
