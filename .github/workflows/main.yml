@@ -68,6 +68,19 @@ jobs:
           channel: stable
       - name: Ensure Android platform files
         run: flutter create --platforms=android --project-name skiffbox .
+      - name: Modernise Android Kotlin/Gradle (for transitive deps like jni)
+        run: |
+          # Some transitive deps (e.g. jni) ship Gradle files that need a
+          # newer Kotlin plugin than the Flutter template pins; without
+          # this the build fails on "Could not find method kotlin()".
+          SG=android/settings.gradle
+          # Bump the Kotlin Android plugin version wherever it's declared.
+          sed -i -E 's/(id +"org\.jetbrains\.kotlin\.android"\) +version +")[0-9.]+(")/\12.1.0\2/' $SG || true
+          sed -i -E "s/(id +'org\.jetbrains\.kotlin\.android'\) +version +')[0-9.]+(')/\12.1.0\2/" $SG || true
+          # Bump the Android Gradle Plugin too, for compatibility.
+          sed -i -E 's/(id +"com\.android\.application"\) +version +")[0-9.]+(")/\18.6.0\2/' $SG || true
+          echo "----- settings.gradle after bump -----"
+          grep -E "kotlin|com.android.application" $SG || true
       - name: Internet permission (release manifest)
         run: |
           # Flutter's release template omits it; without this the app
