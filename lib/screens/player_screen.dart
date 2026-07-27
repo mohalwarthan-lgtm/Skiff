@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import '../services/addons.dart';
 import '../services/db.dart';
 import '../services/skips.dart';
+import '../services/subprep.dart';
 import '../services/net.dart';
 import '../services/trakt.dart';
 
@@ -87,6 +88,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (cacheDir != null && cacheDir.trim().isNotEmpty) {
       _setMpv('cache-dir', cacheDir.trim());
     }
+    // Bigger read-ahead cache so arrow-key/small seeks land inside
+    // buffered data instead of re-fetching from the network. Desktop can
+    // afford more; mobile stays moderate to avoid memory pressure. Large
+    // jumps still re-buffer - that data genuinely isn't downloaded yet.
+    _setMpv('cache', 'yes');
+    _setMpv('demuxer-max-bytes', _desktop ? '512MiB' : '160MiB');
+    _setMpv('demuxer-max-back-bytes', _desktop ? '128MiB' : '48MiB');
+    _setMpv('demuxer-readahead-secs', '60');
     player.stream.error.listen(_onEngineError);
     // A volume you set is a preference, not a per-episode whim.
     final vol = double.tryParse(Db.setting('volume') ?? '');
@@ -721,6 +730,22 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Retries briefly because add-on subs and embedded tracks arrive after
   /// the file opens.
   bool _defSubDone = false;
+  /// Load an external subtitle (add-on URL or downloaded file) after
+  /// cleaning it - clamped so lines never overlap, plain SRT for uniform
+  /// rendering. Falls back to a direct load if preparation fails.
+  Future<void> _loadExternalSub(String urlOrPath, String? lang,
+      {bool isLocal = false, Map<String, String> headers = const {}}) async {
+    final prepared = await SubPrep.prepare(urlOrPath,
+        headers: headers, isLocal: isLocal);
+    if (prepared != null) {
+      await player.setSubtitleTrack(
+          SubtitleTrack.data(prepared, language: lang));
+    } else {
+      await player.setSubtitleTrack(
+          SubtitleTrack.uri(urlOrPath, language: lang));
+    }
+  }
+
   Future<void> _applyDefaultSub() async {
     if (_defSubDone) return;
     final want = Db.setting('sub_lang') ?? 'en';
@@ -733,8 +758,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     for (final a in _dedupedAddonSubs) {
       if (_langKey('${a['lang'] ?? ''}') == want) {
         _defSubDone = true;
-        await player.setSubtitleTrack(
-            SubtitleTrack.uri('${a['url']}', language: '${a['lang'] ?? ''}'));
+        await _loadExternalSub('${a['url']}', '${a['lang'] ?? ''}',
+            headers: widget.headers);
         return;
       }
     }
@@ -742,9 +767,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     for (final l in widget.localSubs) {
       if (_langKey('${l['lang'] ?? ''}') == want) {
         _defSubDone = true;
-        await player.setSubtitleTrack(SubtitleTrack.uri(
-            'file:///${l['path']}',
-            language: '${l['lang'] ?? ''}'));
+        await _loadExternalSub('file:///${l['path']}', '${l['lang'] ?? ''}',
+            isLocal: true);
         return;
       }
     }
@@ -833,12 +857,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       await player.setSubtitleTrack(embedded.firstWhere((t) => t.id == id));
     } else if (picked.startsWith('a:')) {
       final sub = addon[int.parse(picked.substring(2))];
-      await player.setSubtitleTrack(
-          SubtitleTrack.uri(sub['url'], language: sub['lang']));
+      await _loadExternalSub('${sub['url']}', '${sub['lang'] ?? ''}',
+          headers: widget.headers);
     } else if (picked.startsWith('l:')) {
       final sub = widget.localSubs[int.parse(picked.substring(2))];
-      await player.setSubtitleTrack(
-          SubtitleTrack.uri('file:///${sub['path']}', language: sub['lang']));
+      await _loadExternalSub('file:///${sub['path']}', '${sub['lang'] ?? ''}',
+          isLocal: true);
     }
   }
 
@@ -870,16 +894,17 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// sub-ass-override=yes applies size/outline/box to ASS subs while
   /// KEEPING authored positioning (top signs, background voices).
   void _applySubStyle() {
-    // ASS scripts keep their authored styling, positioning, and
-    // collision handling (the "piling" fix); the sliders govern
-    // plain-text subtitles (SRT), where mpv's style options apply.
-    _setMpv('sub-ass-override', 'no');
+    // Every subtitle is rendered as plain bottom text - ASS styling and
+    // positioning are stripped - so subtitles look and behave the same on
+    // every platform, and the style sliders always apply.
+    _setMpv('sub-ass-override', 'strip');
+    _setMpv('sub-ass', 'no');
     _setMpv('sub-font-size', '${(subSize * 1.25).round()}');
     _setMpv('sub-border-size', subOutline.toStringAsFixed(1));
     final a = (subBg * 2.55).round().clamp(0, 255);
     _setMpv('sub-back-color',
         '#${a.toRadixString(16).padLeft(2, '0')}000000');
-    _setMpv('sub-ass-force-style', ''); // never restyle ASS scripts
+    _setMpv('sub-ass-force-style', '');
   }
 
   TextStyle get _subStyle => TextStyle(
