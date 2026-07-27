@@ -70,17 +70,23 @@ jobs:
         run: flutter create --platforms=android --project-name skiffbox .
       - name: Modernise Android Kotlin/Gradle (for transitive deps like jni)
         run: |
-          # Some transitive deps (e.g. jni) ship Gradle files that need a
-          # newer Kotlin plugin than the Flutter template pins; without
-          # this the build fails on "Could not find method kotlin()".
+          # jni 1.0.x ships a Gradle file needing a newer Kotlin plugin
+          # than the Flutter template pins ("Could not find method
+          # kotlin()"). Raise the Kotlin (and AGP) plugin versions in
+          # whichever file the template declared them.
           SG=android/settings.gradle
-          # Bump the Kotlin Android plugin version wherever it's declared.
-          sed -i -E 's/(id +"org\.jetbrains\.kotlin\.android"\) +version +")[0-9.]+(")/\12.1.0\2/' $SG || true
-          sed -i -E "s/(id +'org\.jetbrains\.kotlin\.android'\) +version +')[0-9.]+(')/\12.1.0\2/" $SG || true
-          # Bump the Android Gradle Plugin too, for compatibility.
-          sed -i -E 's/(id +"com\.android\.application"\) +version +")[0-9.]+(")/\18.6.0\2/' $SG || true
-          echo "----- settings.gradle after bump -----"
-          grep -E "kotlin|com.android.application" $SG || true
+          BG=android/build.gradle
+          for F in "$SG" "$BG"; do
+            [ -f "$F" ] || continue
+            # plugins DSL: id "org.jetbrains.kotlin.android" version "X.Y.Z"
+            sed -i -E 's/(org\.jetbrains\.kotlin\.android" version ")[0-9.]+"/\12.1.0"/' "$F"
+            sed -i -E "s/(org\.jetbrains\.kotlin\.android' version ')[0-9.]+'/\12.1.0'/" "$F"
+            sed -i -E 's/(com\.android\.application" version ")[0-9.]+"/\18.6.0"/' "$F"
+            # legacy: ext.kotlin_version = "X.Y.Z"
+            sed -i -E "s/(kotlin_version *= *['\"])[0-9.]+(['\"])/\12.1.0\2/" "$F"
+          done
+          echo "----- kotlin / AGP versions after bump -----"
+          grep -REn "kotlin.android|kotlin_version|com.android.application" android/settings.gradle android/build.gradle || true
       - name: Internet permission (release manifest)
         run: |
           # Flutter's release template omits it; without this the app
